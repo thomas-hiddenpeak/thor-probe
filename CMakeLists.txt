@@ -37,6 +37,7 @@ endif()
 # ============================================================================
 set(COMMUNIS_SOURCES
     src/communis/config.cpp
+    src/communis/spec_reference.cpp
     src/communis/thor.cpp
 )
 # timeline_logger.cpp depends on sensus — excluded from explicit list above
