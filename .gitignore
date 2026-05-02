@@ -1,0 +1,11 @@
+build/
+*.a
+*.so
+*.o
+thor_probe
+*.pyc
+__pycache__/
+.idea/
+.vscode/
+*.swp
+*.swo
