@@ -1,11 +1,19 @@
+# Build directory
 build/
+
+# Compiled artifacts
 *.a
 *.so
 *.o
-thor_probe
-*.pyc
-__pycache__/
+
+# IDE
 .idea/
 .vscode/
+
+# Editor
 *.swp
 *.swo
+
+# Python
+*.pyc
+__pycache__/
