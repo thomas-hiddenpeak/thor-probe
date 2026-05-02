@@ -49,7 +49,13 @@ NetworkInfo probe_network() {
                     speed_str.pop_back();
                 }
                 if (!speed_str.empty()) {
-                    iface.speed = speed_str + " Mb/s";
+                    try {
+                        long spd = std::stol(speed_str);
+                        if (spd < 0) spd = 0;
+                        iface.speed = std::to_string(spd) + " Mb/s";
+                    } catch (...) {
+                        iface.speed = "unknown";
+                    }
                 } else {
                     iface.speed = "unknown";
                 }

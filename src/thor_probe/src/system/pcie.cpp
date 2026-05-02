@@ -45,6 +45,7 @@ PcieInfo probe_pcie() {
                         ? speed_str.substr(0, dot_pos)
                         : speed_str.substr(0, speed_str.find(' '));
                     port.link_speed = std::stoi(num_part);
+                    if (port.link_speed < 0) port.link_speed = 0;
                 } catch (...) {
                     port.link_speed = 0;
                 }
@@ -66,6 +67,7 @@ PcieInfo probe_pcie() {
                     size_t num_start = width_str.find_first_of("0123456789");
                     if (num_start != std::string::npos) {
                         port.link_width = std::stoi(width_str.substr(num_start));
+                        if (port.link_width < 0) port.link_width = 0;
                     } else {
                         port.link_width = 0;
                     }

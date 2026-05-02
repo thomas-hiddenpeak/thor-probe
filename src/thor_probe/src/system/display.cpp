@@ -34,6 +34,11 @@ DisplayInfo probe_display() {
             }
             std::string status;
             std::getline(status_ifs, status);
+            while (!status.empty() &&
+                   (status.back() == '\n' || status.back() == '\r' ||
+                    status.back() == ' ')) {
+                status.pop_back();
+            }
 
             if (status != "connected") continue;
             std::string connector_name;
