@@ -27,6 +27,7 @@
 #include "system/pcie.h"
 #include "telemetry/telemetry_manager.h"
 #include "communis/cuda_check.h"
+#include "communis/spec_reference.h"
 
 using namespace deusridet::probe;
 
@@ -224,6 +225,88 @@ static void print_system_result(const SystemResult& sys) {
         std::cout << "    - " << p.name << " (speed=" << p.link_speed << ", width=" << p.link_width << ")" << std::endl;
 }
 
+static void print_spec_comparison(const FullProbeResult& result, const SpecReference& spec) {
+    print_section_header("Measured vs Nominal (" + spec.model + ")");
+
+    // GPU
+    auto& d = result.gpu.device;
+    auto cmp = [](const std::string& label, int measured, int nominal) {
+        print_field(label, std::to_string(measured) + " (nominal: " + std::to_string(nominal) + ")" +
+                    (measured == nominal ? " \u2713" : " \u26a0"), 28);
+    };
+    auto cmp_double = [](const std::string& label, double measured, double nominal) {
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(3) << measured
+            << " (nominal: " << std::fixed << std::setprecision(3) << nominal << ")";
+        if (std::abs(measured - nominal) < nominal * 0.1)
+            oss << " \u2713";
+        else
+            oss << " \u26a0";
+        print_field(label, oss.str(), 28);
+    };
+    auto cmp_size = [](const std::string& label, size_t measured, size_t nominal) {
+        print_field(label, std::to_string(static_cast<int64_t>(measured / (1024*1024))) + " MB (nominal: " +
+                    std::to_string(static_cast<int64_t>(nominal / (1024*1024))) + " MB)" +
+                    (measured == nominal ? " \u2713" : " \u26a0"), 28);
+    };
+
+    cmp("GPU SM Count", d.sm_count, spec.gpu_sm_count);
+    cmp("GPU CUDA Cores", d.sm_count * d.cuda_cores_per_sm, spec.gpu_cuda_cores);
+    // Tensor cores not directly exposed via CUDA API, skip
+    cmp_size("GPU L2 Cache", d.l2_cache_size, spec.gpu_l2_cache_bytes);
+    print_field("GPU SMEM/SM", std::to_string(static_cast<int64_t>(d.shared_mem_per_sm / 1024)) + " KB (nominal: " +
+                std::to_string(static_cast<int64_t>(spec.gpu_smem_per_sm_bytes / 1024)) + " KB)" +
+                (d.shared_mem_per_sm == spec.gpu_smem_per_sm_bytes ? " ✓" : " ⚠"), 28);
+    cmp("GPU TMUs", d.texture_units_per_sm * d.sm_count, spec.gpu_tmus);
+
+    // Clock comparison (use telemetry if available)
+    if (result.telemetry && result.telemetry->clocks.gpu_mhz > 0) {
+        cmp_double("GPU Clock (current)", result.telemetry->clocks.gpu_mhz / 1000.0, spec.gpu_boost_clock_ghz);
+    } else {
+        if (d.clock_rate_max_khz > 0) {
+            cmp_double("GPU Clock (max)", d.clock_rate_max_khz / 1000000.0, spec.gpu_boost_clock_ghz);
+        }
+    }
+
+    // CPU
+    if (result.cpu) {
+        auto& c = *result.cpu;
+        cmp("CPU Cores", c.core_count, spec.cpu_core_count);
+        cmp("CPU L3 Total", static_cast<int>(c.cache.l3_total_kb), static_cast<int>(spec.cpu_l3_total_kb));
+        if (c.cpu_max_mhz > 0) {
+            cmp_double("CPU Max Freq (MHz->GHz)", c.cpu_max_mhz / 1000.0, spec.cpu_max_freq_ghz);
+        }
+    }
+
+    // Memory
+    if (result.system) {
+        auto& s = *result.system;
+        auto mem_gb = static_cast<int64_t>(s.memory.total_bytes / (1024*1024*1024));
+        auto spec_mem_gb = static_cast<int64_t>(spec.memory_total_bytes / (1024*1024*1024));
+        print_field("Memory", std::to_string(mem_gb) + " GB (nominal: " + std::to_string(spec_mem_gb) + " GB)" +
+                    (mem_gb == spec_mem_gb ? " \u2713" : " \u26a0"), 28);
+        print_field("Memory Type", s.memory.type + " (nominal: " + spec.memory_type + ")" +
+                    (s.memory.type == spec.memory_type ? " \u2713" : " \u26a0"), 28);
+    }
+
+    // Multimedia
+    if (result.multimedia) {
+        cmp("NVENC Instances", result.multimedia->nvenc.instance_count, spec.nvenc_instance_count);
+        cmp("NVDEC Instances", result.multimedia->nvdec.instance_count, spec.nvdec_instance_count);
+    }
+
+    // PCIe
+    if (result.system) {
+        // Parse PCIe version string to get generation number
+        std::string pv = result.system->pcie.version;
+        int pcie_gen = 0;
+        for (char c : pv) { if (std::isdigit(c)) pcie_gen = pcie_gen * 10 + (c - '0'); }
+        cmp("PCIe Version", pcie_gen, spec.pcie_version);
+    }
+
+    std::cout << "\n  Source: " << spec.source << "\n";
+}
+
 static void print_telemetry(const TelemetrySnapshot& ts) {
     print_section_header("Telemetry Snapshot");
     auto& c = ts.clocks;
@@ -286,7 +369,8 @@ static void json_print_result(const FullProbeResult& result) {
         (result.cpu ? 1 : 0) +
         (result.multimedia ? 1 : 0) +
         (result.system ? 1 : 0) +
-        (result.telemetry ? 1 : 0);
+        (result.telemetry ? 1 : 0) +
+        (result.spec_reference.has_value() ? 1 : 0);
 
     out << "{\n";
     out << "  \"platform\": " << json_str(result.platform) << ",\n";
@@ -390,6 +474,31 @@ static void json_print_result(const FullProbeResult& result) {
         out << "\n";
     }
 
+    /* spec_reference section */
+    if (result.spec_reference.has_value()) {
+        auto& spec = *result.spec_reference;
+        out << "  \"spec_reference\": {\n";
+        out << "    \"model\": " << json_str(spec.model) << ",\n";
+        out << "    \"source\": " << json_str(spec.source) << ",\n";
+        out << "    \"gpu_sm_count\": " << spec.gpu_sm_count << ",\n";
+        out << "    \"gpu_cuda_cores\": " << spec.gpu_cuda_cores << ",\n";
+        out << "    \"gpu_tensor_cores\": " << spec.gpu_tensor_cores << ",\n";
+        out << "    \"gpu_boost_clock_ghz\": " << std::fixed << std::setprecision(3) << spec.gpu_boost_clock_ghz << std::defaultfloat << ",\n";
+        out << "    \"gpu_l2_cache_mb\": " << (spec.gpu_l2_cache_bytes / (1024*1024)) << ",\n";
+        out << "    \"gpu_smem_per_sm_kb\": " << (spec.gpu_smem_per_sm_bytes / 1024) << ",\n";
+        out << "    \"cpu_core_count\": " << spec.cpu_core_count << ",\n";
+        out << "    \"cpu_max_freq_ghz\": " << std::fixed << std::setprecision(1) << spec.cpu_max_freq_ghz << std::defaultfloat << ",\n";
+        out << "    \"memory_total_gb\": " << (spec.memory_total_bytes / (1024*1024*1024)) << ",\n";
+        out << "    \"memory_type\": " << json_str(spec.memory_type) << ",\n";
+        out << "    \"memory_peak_bw_gb_s\": " << std::fixed << std::setprecision(0) << spec.memory_peak_bw_gb_s << std::defaultfloat << ",\n";
+        out << "    \"nvenc_instance_count\": " << spec.nvenc_instance_count << ",\n";
+        out << "    \"nvdec_instance_count\": " << spec.nvdec_instance_count << "\n";
+        out << "  }";
+        sections++;
+        if (sections < totalSections) out << ",";
+        out << "\n";
+    }
+
     out << "}\n";
 }
 
@@ -441,6 +550,13 @@ int main(int argc, char* argv[]) {
     FullProbeResult result;
     result.timestamp_s = static_cast<double>(std::time(nullptr));
     result.version = "0.2.0";
+
+    // Spec reference for measured vs nominal comparison
+    #ifdef THOR_PROBE_SPEC_MODEL_T5000
+    result.spec_reference = get_spec_t5000();
+    #elif defined(THOR_PROBE_SPEC_MODEL_T4000)
+    result.spec_reference = get_spec_t4000();
+    #endif
 
     /* --- GPU device validation --- */
     int deviceCount = 0;
@@ -550,6 +666,10 @@ int main(int argc, char* argv[]) {
         std::cout.flush();
         if (result.telemetry) print_telemetry(*result.telemetry);
         std::cout.flush();
+        if (result.spec_reference.has_value()) {
+            print_spec_comparison(result, *result.spec_reference);
+            std::cout.flush();
+        }
     }
 
     return 0;

@@ -16,6 +16,8 @@
 #include <utility>
 #include <vector>
 
+#include "communis/spec_reference.h"
+
 namespace deusridet::probe {
 
 /* ============================================================================
@@ -450,6 +452,7 @@ struct FullProbeResult {
     std::optional<SystemResult> system;
     std::optional<TelemetrySnapshot> telemetry;
     std::optional<BenchResult> benchmarks;
+    std::optional<SpecReference> spec_reference;
 };
 
 } // namespace deusridet::probe

@@ -165,3 +165,16 @@ target_link_libraries(thor_probe PRIVATE
     probe_output
     communis
 )
+
+# ==============================================================================
+# Spec reference model (for measured vs nominal comparison)
+# ==============================================================================
+set(THOR_PROBE_SPEC_MODEL "None" CACHE STRING "Spec reference model: T5000, T4000, or None (default: None)")
+set_property(CACHE THOR_PROBE_SPEC_MODEL PROPERTY STRINGS "None" "T5000" "T4000")
+
+# Apply to thor_probe executable
+if(THOR_PROBE_SPEC_MODEL STREQUAL "T5000")
+  target_compile_definitions(thor_probe PRIVATE THOR_PROBE_SPEC_MODEL_T5000)
+elseif(THOR_PROBE_SPEC_MODEL STREQUAL "T4000")
+  target_compile_definitions(thor_probe PRIVATE THOR_PROBE_SPEC_MODEL_T4000)
+endif()
