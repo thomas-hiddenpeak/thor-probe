@@ -1,0 +1,208 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "thor-probe output",
+  "description": "Schema for the JSON output of thor-probe hardware probe (--json flag)",
+
+  "type": "object",
+  "required": ["platform", "version", "schema_version", "timestamp_s", "gpu"],
+  "additionalProperties": true,
+
+  "properties": {
+    "platform": {
+      "type": "string",
+      "description": "Platform identifier, e.g. 'DeusRidet-Thor'"
+    },
+    "version": {
+      "type": "string",
+      "description": "Probe version, e.g. '0.2.0'"
+    },
+    "schema_version": {
+      "type": "string",
+      "description": "JSON schema version, e.g. '1.0'"
+    },
+    "timestamp_s": {
+      "type": "number",
+      "description": "Unix timestamp in seconds"
+    },
+    "gpu": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["device"],
+          "additionalProperties": false,
+          "properties": {
+            "device": {
+              "type": "object",
+              "required": ["name", "compute_capability", "sm_count"],
+              "additionalProperties": true,
+              "properties": {
+                "name": { "type": "string" },
+                "compute_capability": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
+                "sm_count": { "type": "integer", "minimum": 0 },
+                "global_mem_gb": { "type": "number", "minimum": 0 },
+                "shared_mem_per_sm": { "type": "integer", "minimum": 0 },
+                "regs_per_sm": { "type": "integer", "minimum": 0 },
+                "clock_rate_khz": { "type": "integer", "minimum": 0 },
+                "max_clock_rate_khz": { "type": "integer", "minimum": 0 }
+              }
+            },
+            "tcgen05": {
+              "oneOf": [
+                { "type": "null" },
+                {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "has_nvfp4": { "type": "boolean" },
+                    "has_fp8": { "type": "boolean" },
+                    "tmem_supported": { "type": "boolean" }
+                  }
+                }
+              ]
+            },
+            "deep_sm": {
+              "oneOf": [
+                { "type": "null" },
+                {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "patternProperties": {
+                    "^.+$": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "required": ["value", "source"],
+                          "additionalProperties": false,
+                          "properties": {
+                            "value": { "type": "integer" },
+                            "source": { "type": "string" }
+                          }
+                        },
+                        { "type": "null" }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "cpu": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "architecture": { "type": "string" },
+            "model_name": { "type": "string" },
+            "core_count": { "type": "integer", "minimum": 0 }
+          }
+        }
+      ]
+    },
+    "multimedia": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "nvenc": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "status": { "type": "string" },
+                "h264": { "type": "boolean" }
+              }
+            },
+            "nvdec": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "status": { "type": "string" }
+              }
+            },
+            "pva": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "status": { "type": "string" },
+                "clock_mhz": { "type": "integer" }
+              }
+            },
+            "ofa": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "status": { "type": "string" }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "system": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "memory": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "type": { "type": "string" },
+                "total_bytes": { "type": "integer", "minimum": 0 }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "telemetry": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "gpu_mhz": { "type": "integer" },
+            "gpu_temp_c": { "type": "integer" },
+            "gpu_power_mw": { "type": "integer" }
+          }
+        }
+      ]
+    },
+    "spec_reference": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "model": { "type": "string" },
+            "source": { "type": "string" },
+            "gpu_sm_count": { "type": "integer" },
+            "gpu_cuda_cores": { "type": "integer" },
+            "gpu_tensor_cores": { "type": "integer" },
+            "gpu_boost_clock_ghz": { "type": "number" },
+            "gpu_l2_cache_mb": { "type": "integer" },
+            "gpu_smem_per_sm_kb": { "type": "integer" },
+            "cpu_core_count": { "type": "integer" },
+            "cpu_max_freq_ghz": { "type": "number" },
+            "memory_total_gb": { "type": "integer" },
+            "memory_type": { "type": "string" },
+            "memory_peak_bw_gb_s": { "type": "integer" },
+            "nvenc_instance_count": { "type": "integer" },
+            "nvdec_instance_count": { "type": "integer" }
+          }
+        }
+      ]
+    }
+  }
+}
