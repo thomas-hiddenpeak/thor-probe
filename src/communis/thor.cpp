@@ -6,7 +6,6 @@
 #include "thor.h"
 #include "log.h"
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <cuda_runtime.h>
@@ -39,8 +38,7 @@ bool drop_page_caches() {
         if (rc < 0) return false;
         return true;
     }
-    int rc = system("sudo -n sh -c 'echo 3 > /proc/sys/vm/drop_caches' 2>/dev/null");
-    return (rc == 0);
+    return false;
 }
 
 void thor_cleanup() {
