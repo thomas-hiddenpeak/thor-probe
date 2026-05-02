@@ -1,4 +1,5 @@
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -56,6 +57,10 @@ static void print_field(const std::string& label, int value, int width = 28) {
     print_field(label, std::to_string(value), width);
 }
 
+static void print_field(const std::string& label, int64_t value, int width = 28) {
+    print_field(label, std::to_string(value), width);
+}
+
 static void print_field(const std::string& label, double value, int width = 28) {
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(2) << value;
@@ -68,14 +73,14 @@ static void print_gpu_result(const GpuResult& gpu) {
     print_field("Name", d.name);
     print_field("Compute Capability", std::to_string(d.compute_major) + "." + std::to_string(d.compute_minor));
     print_field("SM Count", d.sm_count);
-    print_field("Global Memory", std::to_string(static_cast<int>(d.global_mem_gb())) + " GB");
-    print_field("Shared Mem/SM", std::to_string(static_cast<int>(d.shared_mem_per_sm / 1024)) + " KB");
+    print_field("Global Memory", std::to_string(static_cast<int64_t>(d.global_mem_gb())) + " GB");
+    print_field("Shared Mem/SM", std::to_string(static_cast<int64_t>(d.shared_mem_per_sm / 1024)) + " KB");
     print_field("Registers/SM", d.regs_per_sm);
     print_field("Warp Size", d.warp_size);
     print_field("Max Threads/Block", d.max_threads_per_block);
     print_field("Max Threads/SM", d.max_threads_per_sm);
     print_field("Total Warps/SM", d.total_warps_per_sm());
-    print_field("L2 Cache", std::to_string(static_cast<int>(d.l2_cache_size / (1024*1024))) + " MB");
+    print_field("L2 Cache", std::to_string(static_cast<int64_t>(d.l2_cache_size / (1024*1024))) + " MB");
     print_field("Clock Rate (kHz)", d.clock_rate_khz);
     print_field("Max Clock Rate (kHz)", d.clock_rate_max_khz);
     print_field("Concurrent Kernels", d.concurrent_kernels);
@@ -117,7 +122,7 @@ static void print_gpu_result(const GpuResult& gpu) {
 
         print_field("Tmem Supported", tc.tmem.supported);
         if (tc.tmem.supported)
-            print_field("Tmem Total", std::to_string(static_cast<int>(tc.tmem.total_bytes / 1024)) + " KB");
+            print_field("Tmem Total", std::to_string(static_cast<int64_t>(tc.tmem.total_bytes / 1024)) + " KB");
         print_field("Async Copy TC", tc.async_copy.tcgen05_cp);
         print_field("Cluster Launch", tc.barrier.cluster_launch);
         print_field("Grid Mem Fence", tc.barrier.grid_mem_fence_supported);
@@ -203,14 +208,14 @@ static void print_system_result(const SystemResult& sys) {
     print_section_header("System");
     print_field("Memory Type", sys.memory.type);
     print_field("Bus Width", std::to_string(sys.memory.bus_width_bits) + " bits");
-    print_field("Peak BW", std::to_string(static_cast<int>(sys.memory.peak_bandwidth_gb_s)) + " GB/s");
-    print_field("Total Memory", std::to_string(static_cast<int>(sys.memory.total_bytes / (1024*1024*1024))) + " GB");
+    print_field("Peak BW", std::to_string(static_cast<int64_t>(sys.memory.peak_bandwidth_gb_s)) + " GB/s");
+    print_field("Total Memory", std::to_string(static_cast<int64_t>(sys.memory.total_bytes / (1024*1024*1024))) + " GB");
 
     print_field("Display Outputs", sys.display.output_count);
     for (auto& o : sys.display.outputs)
         std::cout << "    - " << o << std::endl;
 
-    print_field("Network Interfaces", std::to_string(static_cast<int>(sys.network.interfaces.size())));
+    print_field("Network Interfaces", std::to_string(static_cast<int64_t>(sys.network.interfaces.size())));
     for (auto& n : sys.network.interfaces)
         std::cout << "    - " << n.name << " (" << n.speed << ")" << std::endl;
 
@@ -286,7 +291,7 @@ static void json_print_result(const FullProbeResult& result) {
     out << "{\n";
     out << "  \"platform\": " << json_str(result.platform) << ",\n";
     out << "  \"version\": " << json_str(result.version) << ",\n";
-    out << "  \"timestamp_s\": " << result.timestamp_s << ",\n";
+    out << "  \"timestamp_s\": " << std::fixed << std::setprecision(1) << result.timestamp_s << std::defaultfloat << ",\n";
 
     /* gpu section */
     if (gpu_is_empty(result.gpu)) {
@@ -466,8 +471,6 @@ int main(int argc, char* argv[]) {
 
             result.gpu.deep_sm = run_deep_sm_probe(device);
             out << "[deep_sm] Dynamic probes complete" << std::endl;
-
-            result.gpu.device = refine_with_deep_sm(result.gpu.device, result.gpu.deep_sm);
         } catch (const std::exception& e) {
             std::cerr << "[gpu] FAILED: " << e.what() << std::endl;
             gpuAvailable = false;
@@ -476,6 +479,18 @@ int main(int argc, char* argv[]) {
             LOG_ERROR("GPU", "Unknown GPU probe failure");
             gpuAvailable = false;
             result.gpu = GpuResult{};
+        }
+
+        if (gpuAvailable) {
+            try {
+                result.gpu.device = refine_with_deep_sm(result.gpu.device, result.gpu.deep_sm);
+            } catch (const std::exception& e) {
+                std::cerr << "[gpu] refine_with_deep_sm FAILED: " << e.what() << std::endl;
+                // Do NOT discard tcgen05/deep_sm results on refine failure
+            } catch (...) {
+                LOG_ERROR("GPU", "Unknown refine_with_deep_sm failure");
+                // Do NOT discard tcgen05/deep_sm results on refine failure
+            }
         }
     }
 
@@ -490,23 +505,23 @@ int main(int argc, char* argv[]) {
 
     /* --- Multimedia --- */
     MultimediaResult mm;
-    try { mm.nvenc = probe_nvenc(); } catch (...) { mm.nvenc.status = "error"; }
-    try { mm.nvdec = probe_nvdec(); } catch (...) { mm.nvdec.status = "error"; }
-    try { mm.nvjpeg = probe_nvjpeg(); } catch (...) { mm.nvjpeg.status = "error"; }
-    try { mm.pva = probe_pva(); } catch (...) { mm.pva.status = "error"; }
-    try { mm.ofa = probe_ofa(); } catch (...) { mm.ofa.status = "error"; }
-    try { mm.isp[0] = probe_isp(0); } catch (...) { mm.isp[0].status = "error"; }
-    try { mm.isp[1] = probe_isp(1); } catch (...) { mm.isp[1].status = "error"; }
-    try { mm.vic = probe_vic(); } catch (...) { mm.vic.status = "error"; }
+    try { mm.nvenc = probe_nvenc(); } catch (const std::exception& e) { LOG_WARN("probe_main", "NVENC probe failed: %s", e.what()); mm.nvenc.status = "error"; } catch (...) { LOG_WARN("probe_main", "NVENC probe failed with unknown exception"); mm.nvenc.status = "error"; }
+    try { mm.nvdec = probe_nvdec(); } catch (const std::exception& e) { LOG_WARN("probe_main", "NVDEC probe failed: %s", e.what()); mm.nvdec.status = "error"; } catch (...) { LOG_WARN("probe_main", "NVDEC probe failed with unknown exception"); mm.nvdec.status = "error"; }
+    try { mm.nvjpeg = probe_nvjpeg(); } catch (const std::exception& e) { LOG_WARN("probe_main", "NVJPEG probe failed: %s", e.what()); mm.nvjpeg.status = "error"; } catch (...) { LOG_WARN("probe_main", "NVJPEG probe failed with unknown exception"); mm.nvjpeg.status = "error"; }
+    try { mm.pva = probe_pva(); } catch (const std::exception& e) { LOG_WARN("probe_main", "PVA probe failed: %s", e.what()); mm.pva.status = "error"; } catch (...) { LOG_WARN("probe_main", "PVA probe failed with unknown exception"); mm.pva.status = "error"; }
+    try { mm.ofa = probe_ofa(); } catch (const std::exception& e) { LOG_WARN("probe_main", "OFA probe failed: %s", e.what()); mm.ofa.status = "error"; } catch (...) { LOG_WARN("probe_main", "OFA probe failed with unknown exception"); mm.ofa.status = "error"; }
+    try { mm.isp[0] = probe_isp(0); } catch (const std::exception& e) { LOG_WARN("probe_main", "ISP0 probe failed: %s", e.what()); mm.isp[0].status = "error"; } catch (...) { LOG_WARN("probe_main", "ISP0 probe failed with unknown exception"); mm.isp[0].status = "error"; }
+    try { mm.isp[1] = probe_isp(1); } catch (const std::exception& e) { LOG_WARN("probe_main", "ISP1 probe failed: %s", e.what()); mm.isp[1].status = "error"; } catch (...) { LOG_WARN("probe_main", "ISP1 probe failed with unknown exception"); mm.isp[1].status = "error"; }
+    try { mm.vic = probe_vic(); } catch (const std::exception& e) { LOG_WARN("probe_main", "VIC probe failed: %s", e.what()); mm.vic.status = "error"; } catch (...) { LOG_WARN("probe_main", "VIC probe failed with unknown exception"); mm.vic.status = "error"; }
     result.multimedia = mm;
     out << "[multimedia] Probed" << std::endl;
 
     /* --- System --- */
     SystemResult sys;
-    try { sys.memory = probe_memory(); } catch (...) { LOG_WARN("System", "probe_memory failed"); }
-    try { sys.display = probe_display(); } catch (...) { LOG_WARN("System", "probe_display failed"); }
-    try { sys.network = probe_network(); } catch (...) { LOG_WARN("System", "probe_network failed"); }
-    try { sys.pcie = probe_pcie(); } catch (...) { LOG_WARN("System", "probe_pcie failed"); }
+    try { sys.memory = probe_memory(); } catch (const std::exception& e) { LOG_WARN("System", "probe_memory failed: %s", e.what()); } catch (...) { LOG_WARN("System", "probe_memory failed with unknown exception"); }
+    try { sys.display = probe_display(); } catch (const std::exception& e) { LOG_WARN("System", "probe_display failed: %s", e.what()); } catch (...) { LOG_WARN("System", "probe_display failed with unknown exception"); }
+    try { sys.network = probe_network(); } catch (const std::exception& e) { LOG_WARN("System", "probe_network failed: %s", e.what()); } catch (...) { LOG_WARN("System", "probe_network failed with unknown exception"); }
+    try { sys.pcie = probe_pcie(); } catch (const std::exception& e) { LOG_WARN("System", "probe_pcie failed: %s", e.what()); } catch (...) { LOG_WARN("System", "probe_pcie failed with unknown exception"); }
     result.system = sys;
     out << "[system] Probed" << std::endl;
 
@@ -516,7 +531,9 @@ int main(int argc, char* argv[]) {
         result.telemetry = tm.snapshot();
         out << "[telemetry] Snapshot taken" << std::endl;
     } catch (const std::exception& e) {
-        std::cerr << "[telemetry] FAILED: " << e.what() << std::endl;
+        LOG_WARN("probe_main", "Telemetry probe failed: %s", e.what());
+    } catch (...) {
+        LOG_WARN("probe_main", "Telemetry probe failed with unknown exception");
     }
 
     /* --- Output --- */
