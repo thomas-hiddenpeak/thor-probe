@@ -4,6 +4,7 @@
 
 #include <dlfcn.h>
 #include <cstdio>
+#include <fstream>
 #include <string>
 
 namespace deusridet::probe {
@@ -58,17 +59,21 @@ NvencCaps probe_nvenc() {
         "/sys/kernel/debug/tegra_profiler/nvenc0_clk_rate",
         nullptr
     };
-    FILE* fp = nullptr;
-    for (int i = 0; sysfs_paths[i] && !fp; ++i) {
-        fp = fopen(sysfs_paths[i], "r");
-    }
-    if (fp) {
-        unsigned long long rate = 0;
-        if (fscanf(fp, "%llu", &rate) == 1) {
-            result.clock_mhz = static_cast<unsigned int>(rate / 1000000);
-            LOG_INFO("NvencProbe", "Clock from sysfs: %u MHz", result.clock_mhz);
+    for (int i = 0; sysfs_paths[i]; ++i) {
+        std::ifstream ifs(sysfs_paths[i]);
+        if (ifs.is_open()) {
+            std::string line;
+            if (std::getline(ifs, line)) {
+                try {
+                    unsigned long long rate = std::stoull(line);
+                    result.clock_mhz = static_cast<unsigned int>(rate / 1000000);
+                    LOG_INFO("NvencProbe", "Clock from sysfs: %u MHz", result.clock_mhz);
+                    break;
+                } catch (...) {
+                    LOG_WARN("NvencProbe", "Failed to parse clock from %s", sysfs_paths[i]);
+                }
+            }
         }
-        fclose(fp);
     }
 
     dlclose(lib);

@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include <dirent.h>
+#include <fstream>
 #include <string>
 #include <sys/stat.h>
 
@@ -63,17 +64,21 @@ GenericProbeComponent probe_isp(int index) {
         "/sys/kernel/debug/tegra_profiler/isp_clk_rate",
         nullptr
     };
-    FILE* fp = nullptr;
-    for (int i = 0; sysfs_paths[i] && !fp; ++i) {
-        fp = fopen(sysfs_paths[i], "r");
-    }
-    if (fp) {
-        unsigned long long rate = 0;
-        if (fscanf(fp, "%llu", &rate) == 1) {
-            result.clock_mhz = static_cast<unsigned int>(rate / 1000000);
-            LOG_INFO("IspProbe", "Clock from sysfs: %u MHz", result.clock_mhz);
+    for (int i = 0; sysfs_paths[i]; ++i) {
+        std::ifstream ifs(sysfs_paths[i]);
+        if (ifs.is_open()) {
+            std::string line;
+            if (std::getline(ifs, line)) {
+                try {
+                    unsigned long long rate = std::stoull(line);
+                    result.clock_mhz = static_cast<unsigned int>(rate / 1000000);
+                    LOG_INFO("IspProbe", "Clock from sysfs: %u MHz", result.clock_mhz);
+                    break;
+                } catch (...) {
+                    LOG_WARN("IspProbe", "Failed to parse clock from %s", sysfs_paths[i]);
+                }
+            }
         }
-        fclose(fp);
     }
 
     return result;

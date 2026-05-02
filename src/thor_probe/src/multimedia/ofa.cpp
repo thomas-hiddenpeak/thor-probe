@@ -5,6 +5,8 @@
 #include <dlfcn.h>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <string>
 
 namespace deusridet::probe {
 
@@ -24,9 +26,8 @@ OfaInfo probe_ofa() {
     }
 
     // Try to resolve vpiBackendGetAvailableBackends to check for VPI_BACKEND_OFA
-    typedef void* (*vpiBackendGetAvailableBackends_t)(int*);
     auto vpiBackendGetAvailableBackends =
-        reinterpret_cast<vpiBackendGetAvailableBackends_t>(dlsym(lib, "vpiBackendGetAvailableBackends"));
+        reinterpret_cast<void* (*)(int*)>(dlsym(lib, "vpiBackendGetAvailableBackends"));
 
     bool ofa_found = false;
     if (vpiBackendGetAvailableBackends) {
@@ -59,17 +60,21 @@ OfaInfo probe_ofa() {
         "/sys/kernel/debug/tegra_profiler/ofa_clk_rate",
         nullptr
     };
-    FILE* fp = nullptr;
-    for (int i = 0; sysfs_paths[i] && !fp; ++i) {
-        fp = fopen(sysfs_paths[i], "r");
-    }
-    if (fp) {
-        unsigned long long rate = 0;
-        if (fscanf(fp, "%llu", &rate) == 1) {
-            result.clock_mhz = static_cast<unsigned int>(rate / 1000000);
-            LOG_INFO("OfaProbe", "Clock from sysfs: %u MHz", result.clock_mhz);
+    for (int i = 0; sysfs_paths[i]; ++i) {
+        std::ifstream ifs(sysfs_paths[i]);
+        if (ifs.is_open()) {
+            std::string line;
+            if (std::getline(ifs, line)) {
+                try {
+                    unsigned long long rate = std::stoull(line);
+                    result.clock_mhz = static_cast<unsigned int>(rate / 1000000);
+                    LOG_INFO("OfaProbe", "Clock from sysfs: %u MHz", result.clock_mhz);
+                    break;
+                } catch (...) {
+                    LOG_WARN("OfaProbe", "Failed to parse clock from %s", sysfs_paths[i]);
+                }
+            }
         }
-        fclose(fp);
     }
 
     dlclose(lib);
