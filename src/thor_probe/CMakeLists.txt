@@ -34,7 +34,6 @@ target_include_directories(probe_gpu_cu PUBLIC
 target_include_directories(probe_gpu_cu PRIVATE
     "${PROBE_SRC_DIR}"
 )
-set_target_properties(probe_gpu_cu PROPERTIES CUDA_ARCHITECTURES "110a")
 target_compile_options(probe_gpu_cu PRIVATE -Xcompiler -Wall,-Wextra)
 target_link_libraries(probe_gpu_cu PUBLIC communis)
 
@@ -166,4 +165,3 @@ target_link_libraries(thor_probe PRIVATE
     probe_output
     communis
 )
-set_target_properties(thor_probe PROPERTIES CUDA_ARCHITECTURES "110a")

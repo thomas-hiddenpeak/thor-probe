@@ -20,8 +20,8 @@ set(CMAKE_CUDA_ARCHITECTURES "110a" CACHE STRING "CUDA architectures" FORCE)
 # Config-specific optimization (Release / RelWithDebInfo only)
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -D_FORTIFY_SOURCE=2 -fstack-protector-strong")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 -D_FORTIFY_SOURCE=2 -fstack-protector-strong")
-set(CMAKE_CUDA_FLAGS_RELEASE "${CMAKE_CUDA_FLAGS_RELEASE} -O3 --use_fast_math -Xptxas -O3")
-set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${CMAKE_CUDA_FLAGS_RELWITHDEBINFO} -O3 --use_fast_math -Xptxas -O3")
+set(CMAKE_CUDA_FLAGS_RELEASE "${CMAKE_CUDA_FLAGS_RELEASE} -O3 -Xptxas -O3")
+set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${CMAKE_CUDA_FLAGS_RELWITHDEBINFO} -O3 -Xptxas -O3")
 
 # ============================================================================
 # Dependencies
@@ -43,6 +43,8 @@ set(COMMUNIS_SOURCES
 add_library(communis STATIC ${COMMUNIS_SOURCES})
 target_include_directories(communis PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_include_directories(communis PRIVATE
     ${CUDAToolkit_INCLUDE_DIRS}
 )
 target_link_libraries(communis PUBLIC CUDA::cudart)
