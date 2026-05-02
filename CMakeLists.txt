@@ -29,6 +29,10 @@ set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${CMAKE_CUDA_FLAGS_RELWITHDEBINFO} -O3 --us
 # ============================================================================
 find_package(CUDAToolkit REQUIRED)
 
+if(CMAKE_CUDA_COMPILER_VERSION VERSION_LESS "13.0")
+  message(FATAL_ERROR "thor-probe requires CUDA 13.0 or later (found ${CMAKE_CUDA_COMPILER_VERSION})")
+endif()
+
 # ============================================================================
 # Communis: common utilities static library
 # ============================================================================
@@ -43,6 +47,10 @@ target_include_directories(communis PUBLIC
     ${CUDAToolkit_INCLUDE_DIRS}
 )
 target_link_libraries(communis PRIVATE CUDA::cudart)
+target_compile_options(communis PRIVATE
+  $<$<COMPILE_LANGUAGE:CXX>:-Wall -Wextra>
+  $<$<COMPILE_LANGUAGE:CUDA>:-Wall>
+)
 
 # ============================================================================
 # Thor Probe (modular architecture)

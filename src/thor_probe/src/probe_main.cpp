@@ -1,3 +1,4 @@
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -289,7 +290,8 @@ static void json_print_result(const FullProbeResult& result) {
     out << "      \"name\": " << json_str(d.name) << ",\n";
     out << "      \"compute_capability\": \"" << d.compute_major << "." << d.compute_minor << "\",\n";
     out << "      \"sm_count\": " << d.sm_count << ",\n";
-    out << "      \"global_mem_gb\": " << d.global_mem_gb() << ",\n";
+    double gb = d.global_mem_gb();
+    out << "      \"global_mem_gb\": " << (std::isnan(gb) || std::isinf(gb) ? 0.0 : gb) << ",\n";
     out << "      \"shared_mem_per_sm\": " << d.shared_mem_per_sm << ",\n";
     out << "      \"regs_per_sm\": " << d.regs_per_sm << ",\n";
     out << "      \"clock_rate_khz\": " << d.clock_rate_khz << ",\n";
@@ -411,7 +413,7 @@ int main(int argc, char* argv[]) {
     int deviceCount = 0;
     bool gpuAvailable = false;
     cudaError_t err = cudaGetDeviceCount(&deviceCount);
-    if (err == cudaSuccess && deviceCount > 0 && device < deviceCount) {
+    if (err == cudaSuccess && deviceCount > 0 && device >= 0 && device < deviceCount) {
         cudaCheck(cudaSetDevice(device));
         gpuAvailable = true;
     } else if (err != cudaSuccess) {
@@ -423,16 +425,21 @@ int main(int argc, char* argv[]) {
     }
 
     if (gpuAvailable) {
-        result.gpu.device = query_device_props(device);
-        out << "[gpu] Probed: " << result.gpu.device.name << std::endl;
+        try {
+            result.gpu.device = query_device_props(device);
+            out << "[gpu] Probed: " << result.gpu.device.name << std::endl;
 
-        result.gpu.tcgen05 = detect_tcgen05_capabilities(device);
-        out << "[tcgen05] Capabilities detected" << std::endl;
+            result.gpu.tcgen05 = detect_tcgen05_capabilities(device);
+            out << "[tcgen05] Capabilities detected" << std::endl;
 
-        result.gpu.deep_sm = run_deep_sm_probe(device);
-        out << "[deep_sm] Dynamic probes complete" << std::endl;
+            result.gpu.deep_sm = run_deep_sm_probe(device);
+            out << "[deep_sm] Dynamic probes complete" << std::endl;
 
-        result.gpu.device = refine_with_deep_sm(result.gpu.device, result.gpu.deep_sm);
+            result.gpu.device = refine_with_deep_sm(result.gpu.device, result.gpu.deep_sm);
+        } catch (const std::exception& e) {
+            std::cerr << "[gpu] FAILED: " << e.what() << std::endl;
+            gpuAvailable = false;
+        }
     }
 
 

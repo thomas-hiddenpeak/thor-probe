@@ -45,6 +45,7 @@ struct AnchorSlot {
     std::atomic<uint64_t> t0_anchor_ns{0};
     std::atomic<uint64_t> t1_zero{0};
     std::atomic<uint64_t> period_ns{0};
+    std::atomic<uint32_t> seq_{0};
 };
 inline std::array<AnchorSlot, static_cast<size_t>(Domain::COUNT)>& anchors() {
     static std::array<AnchorSlot, static_cast<size_t>(Domain::COUNT)> s;
@@ -57,17 +58,23 @@ inline void anchor_register(Domain d,
                             uint64_t t1_zero,
                             uint64_t period_ns) noexcept {
     auto& slot = detail::anchors()[static_cast<size_t>(d)];
+    uint32_t seq = slot.seq_.load(std::memory_order_relaxed);
     slot.t0_anchor_ns.store(t0_anchor_ns, std::memory_order_release);
     slot.t1_zero.store(t1_zero,           std::memory_order_release);
     slot.period_ns.store(period_ns,       std::memory_order_release);
+    slot.seq_.store(++seq, std::memory_order_release);
 }
 
 inline ClockAnchor anchor_of(Domain d) noexcept {
     const auto& slot = detail::anchors()[static_cast<size_t>(d)];
     ClockAnchor a;
-    a.t0_anchor_ns = slot.t0_anchor_ns.load(std::memory_order_acquire);
-    a.t1_zero      = slot.t1_zero.load(std::memory_order_acquire);
-    a.period_ns    = slot.period_ns.load(std::memory_order_acquire);
+    uint32_t seq;
+    do {
+        seq = slot.seq_.load(std::memory_order_acquire);
+        a.t0_anchor_ns = slot.t0_anchor_ns.load(std::memory_order_acquire);
+        a.t1_zero      = slot.t1_zero.load(std::memory_order_acquire);
+        a.period_ns    = slot.period_ns.load(std::memory_order_acquire);
+    } while (slot.seq_.load(std::memory_order_acquire) != seq);
     return a;
 }
 

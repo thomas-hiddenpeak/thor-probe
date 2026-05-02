@@ -215,7 +215,8 @@ TegraStatsSource::ParseResult TegraStatsSource::parse_line(const std::string& li
         for (auto it = begin; it != end; ++it) {
             try {
                 std::string name = (*it)[1].str();
-                unsigned int temp = static_cast<unsigned int>(std::stod((*it)[2].str()));
+                double temp_d = std::stod((*it)[2].str());
+                unsigned int temp = temp_d < 0 ? 0 : static_cast<unsigned int>(temp_d);
                 result.temps.push_back({name, temp});
             } catch (...) {}
         }
@@ -250,7 +251,13 @@ TegraStatsSource::ParseResult TegraStatsSource::parse_line(const std::string& li
 }
 
 std::optional<unsigned int> TegraStatsSource::extract_freq(const std::string& line, const std::string& token) {
-    auto pos = line.find(token);
+    size_t pos = line.find(token);
+    while (pos != std::string::npos) {
+        if (pos == 0 || line[pos - 1] == ' ') {
+            break;
+        }
+        pos = line.find(token, pos + 1);
+    }
     if (pos == std::string::npos) return std::nullopt;
     std::string remainder = line.substr(pos + token.size());
     auto at_pos = remainder.find('@');

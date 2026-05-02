@@ -141,7 +141,12 @@ static CpuResult::CacheInfo parse_cache_from_sysfs() {
 
         std::string level_str = read_file(entry.path() / "level");
         if (level_str.empty()) continue;
-        int level = std::stoi(level_str);
+        int level = 0;
+        try {
+            level = std::stoi(level_str);
+        } catch (...) {
+            continue;
+        }
 
         std::string type = read_file(entry.path() / "type");
         std::string size_str = read_file(entry.path() / "size");
@@ -241,12 +246,20 @@ CpuResult probe_cpu() {
         for (auto& proc : processors) {
             CpuCoreInfo core;
             if (proc.count("processor")) {
-                core.core_id = std::stoi(proc["processor"]);
+                try {
+                    core.core_id = std::stoi(proc["processor"]);
+                } catch (...) {
+                    core.core_id = 0;
+                }
             }
             core_ids.insert(core.core_id);
 
             if (proc.count("Physical id")) {
-                core.physical_id = std::stoi(proc["Physical id"]);
+                try {
+                    core.physical_id = std::stoi(proc["Physical id"]);
+                } catch (...) {
+                    core.physical_id = 0;
+                }
                 physical_ids.insert(core.physical_id);
             } else {
                 core.physical_id = 0;
@@ -278,14 +291,22 @@ CpuResult probe_cpu() {
             {
                 std::string freq_str = read_file(base / "cpufreq" / "scaling_cur_freq");
                 if (!freq_str.empty()) {
-                    core.mhz = static_cast<unsigned int>(std::stoul(freq_str) / 1000);
+                    try {
+                        core.mhz = static_cast<unsigned int>(std::stoul(freq_str) / 1000);
+                    } catch (...) {
+                        core.mhz = 0;
+                    }
                 }
             }
 
             {
                 std::string max_str = read_file(base / "cpufreq" / "cpuinfo_max_freq");
                 if (!max_str.empty()) {
-                    core.max_mhz = static_cast<unsigned int>(std::stoul(max_str) / 1000);
+                    try {
+                        core.max_mhz = static_cast<unsigned int>(std::stoul(max_str) / 1000);
+                    } catch (...) {
+                        core.max_mhz = 0;
+                    }
                     global_max_mhz = std::max(global_max_mhz, core.max_mhz);
                 }
             }
@@ -293,7 +314,11 @@ CpuResult probe_cpu() {
             {
                 std::string min_str = read_file(base / "cpufreq" / "cpuinfo_min_freq");
                 if (!min_str.empty()) {
-                    core.min_mhz = static_cast<unsigned int>(std::stoul(min_str) / 1000);
+                    try {
+                        core.min_mhz = static_cast<unsigned int>(std::stoul(min_str) / 1000);
+                    } catch (...) {
+                        core.min_mhz = 0;
+                    }
                     if (core.min_mhz < global_min_mhz) {
                         global_min_mhz = core.min_mhz;
                     }
@@ -317,10 +342,18 @@ CpuResult probe_cpu() {
             std::string max_str = read_file("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq");
             std::string min_str = read_file("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_min_freq");
             if (!max_str.empty()) {
-                result.cpu_max_mhz = static_cast<unsigned int>(std::stoul(max_str) / 1000);
+                try {
+                    result.cpu_max_mhz = static_cast<unsigned int>(std::stoul(max_str) / 1000);
+                } catch (...) {
+                    result.cpu_max_mhz = 0;
+                }
             }
             if (!min_str.empty()) {
-                result.cpu_min_mhz = static_cast<unsigned int>(std::stoul(min_str) / 1000);
+                try {
+                    result.cpu_min_mhz = static_cast<unsigned int>(std::stoul(min_str) / 1000);
+                } catch (...) {
+                    result.cpu_min_mhz = 0;
+                }
             }
         }
     }

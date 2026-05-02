@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdio>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -33,14 +34,25 @@ class Writer {
     static std::string escape(std::string_view s) {
         std::string out;
         out.reserve(s.size() + 8);
-        for (char c : s) {
+        for (unsigned char c : s) {
             switch (c) {
                 case '"': out += "\\\""; break;
                 case '\\': out += "\\\\"; break;
                 case '\n': out += "\\n"; break;
                 case '\r': out += "\\r"; break;
                 case '\t': out += "\\t"; break;
-                default: out += c;
+                case '\b': out += "\\b"; break;
+                case '\f': out += "\\f"; break;
+                default:
+                    if (c < 0x20) {
+                        // Control character - escape as \u00XX
+                        char buf[8];
+                        snprintf(buf, sizeof(buf), "\\u%04x", c);
+                        out += buf;
+                    } else {
+                        out += static_cast<char>(c);
+                    }
+                    break;
             }
         }
         return out;

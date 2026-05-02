@@ -52,9 +52,18 @@ void TimelineLogger::log_stats(const AudioPipelineStats& st,
         st.asr_busy ? "true" : "false",
         st.asr_post_silence_ms, st.asr_effective_silence_ms);
 
-    buf[n++] = '}';
-    buf[n++] = '\n';
-    buf[n] = '\0';
+    // Guard against truncation: if n >= sizeof(buf), snprintf already truncated
+    if (n < (int)sizeof(buf) - 2) {
+        buf[n++] = '}';
+        buf[n++] = '\n';
+        buf[n] = '\0';
+    } else {
+        // Overwrite last byte with closing brace to avoid truncation
+        int end = sizeof(buf) - 2;
+        buf[end++] = '}';
+        buf[end++] = '\n';
+        buf[end] = '\0';
+    }
 
     fputs(buf, fp_);
     stats_count_++;

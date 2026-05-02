@@ -155,40 +155,48 @@ int detect_warp_schedulers(int device) {
     cudaCheck(cudaEventCreate(&start));
     cudaCheck(cudaEventCreate(&stop));
 
-    /* Warmup all configurations */
-    for (int t = 0; t < num_points; ++t) {
-        int active = warp_counts[t];
-        int block_size = active * 32;
-        warp_scheduler_probe_kernel<<<1, block_size>>>(d_out, active, WARP_ITERATIONS);
-    }
-    cudaCheck(cudaDeviceSynchronize());
-
-    for (int t = 0; t < num_points; ++t) {
-        int active = warp_counts[t];
-        int block_size = active * 32;
-
-        /* Run multiple times and take median */
-        std::vector<double> times;
-        for (int r = 0; r < MEASURE_REPEATS; ++r) {
-            cudaCheck(cudaEventRecord(start));
+    try {
+        /* Warmup all configurations */
+        for (int t = 0; t < num_points; ++t) {
+            int active = warp_counts[t];
+            int block_size = active * 32;
             warp_scheduler_probe_kernel<<<1, block_size>>>(d_out, active, WARP_ITERATIONS);
-            cudaCheck(cudaEventRecord(stop));
-            cudaCheck(cudaEventSynchronize(stop));
-
-            float ms = 0;
-            cudaCheck(cudaEventElapsedTime(&ms, start, stop));
-
             cudaCheck(cudaGetLastError());
-            if (ms > 0) {
-                times.push_back(ms);
+        }
+        cudaCheck(cudaDeviceSynchronize());
+
+        for (int t = 0; t < num_points; ++t) {
+            int active = warp_counts[t];
+            int block_size = active * 32;
+
+            /* Run multiple times and take median */
+            std::vector<double> times;
+            for (int r = 0; r < MEASURE_REPEATS; ++r) {
+                cudaCheck(cudaEventRecord(start));
+                warp_scheduler_probe_kernel<<<1, block_size>>>(d_out, active, WARP_ITERATIONS);
+                cudaCheck(cudaEventRecord(stop));
+                cudaCheck(cudaEventSynchronize(stop));
+
+                float ms = 0;
+                cudaCheck(cudaEventElapsedTime(&ms, start, stop));
+
+                cudaCheck(cudaGetLastError());
+                if (ms > 0) {
+                    times.push_back(ms);
+                }
+            }
+
+            if (times.size() >= 2) {
+                std::sort(times.begin(), times.end());
+                elapsed_ms[t] = times[times.size() / 2];
+                valid_cnt[t] = 1;
             }
         }
-
-        if (times.size() >= 2) {
-            std::sort(times.begin(), times.end());
-            elapsed_ms[t] = times[times.size() / 2];
-            valid_cnt[t] = 1;
-        }
+    } catch (...) {
+        cudaFree(d_out);
+        cudaEventDestroy(start);
+        cudaEventDestroy(stop);
+        throw;
     }
 
     cudaCheck(cudaFree(d_out));
@@ -291,22 +299,30 @@ std::pair<int, int> detect_shared_mem_banks(int device) {
 
     std::vector<std::vector<float>> all_times(num_strides, std::vector<float>(repeats));
 
-    /* Warmup */
-    for (int s = 0; s < num_strides; ++s) {
-        bank_conflict_probe_kernel<<<4, 128>>>(strides[s], num_accesses, d_out);
-    }
-    cudaCheck(cudaDeviceSynchronize());
-
-    for (int s = 0; s < num_strides; ++s) {
-        for (int r = 0; r < repeats; ++r) {
-            cudaCheck(cudaEventRecord(start));
+    try {
+        /* Warmup */
+        for (int s = 0; s < num_strides; ++s) {
             bank_conflict_probe_kernel<<<4, 128>>>(strides[s], num_accesses, d_out);
-            cudaCheck(cudaEventRecord(stop));
-            cudaCheck(cudaEventSynchronize(stop));
-            float ms = 0;
-            cudaCheck(cudaEventElapsedTime(&ms, start, stop));
-            all_times[s][r] = ms;
+            cudaCheck(cudaGetLastError());
         }
+        cudaCheck(cudaDeviceSynchronize());
+
+        for (int s = 0; s < num_strides; ++s) {
+            for (int r = 0; r < repeats; ++r) {
+                cudaCheck(cudaEventRecord(start));
+                bank_conflict_probe_kernel<<<4, 128>>>(strides[s], num_accesses, d_out);
+                cudaCheck(cudaEventRecord(stop));
+                cudaCheck(cudaEventSynchronize(stop));
+                float ms = 0;
+                cudaCheck(cudaEventElapsedTime(&ms, start, stop));
+                all_times[s][r] = ms;
+            }
+        }
+    } catch (...) {
+        cudaFree(d_out);
+        cudaEventDestroy(start);
+        cudaEventDestroy(stop);
+        throw;
     }
 
     cudaCheck(cudaFree(d_out));
@@ -403,64 +419,74 @@ size_t detect_l1_cache_size(int device) {
     std::vector<size_t> sizeResults;
     std::vector<double> latencies; /* us per access */
 
-    for (size_t arrayBytes : sizes) {
-        size_t numInts = arrayBytes / sizeof(int);
-        if (numInts < 64) continue;
+    try {
+        for (size_t arrayBytes : sizes) {
+            size_t numInts = arrayBytes / sizeof(int);
+            if (numInts < 64) continue;
 
-        /* Build a random permutation chain on host */
-        std::vector<int> h_chain(numInts);
-        for (size_t i = 0; i < numInts; ++i) h_chain[i] = (int)i;
+            /* Build a random permutation chain on host */
+            std::vector<int> h_chain(numInts);
+            for (size_t i = 0; i < numInts; ++i) h_chain[i] = (int)i;
 
-        /* Fisher-Yates shuffle to create random access pattern */
-        unsigned int seed = (unsigned int)(arrayBytes ^ 0xDEADBEEF);
-        for (size_t i = numInts - 1; i > 0; --i) {
-            /* Simple LCG for deterministic shuffle */
-            seed = seed * 1103515245 + 12345;
-            size_t j = seed % (i + 1);
-            int tmp = h_chain[i];
-            h_chain[i] = h_chain[j];
-            h_chain[j] = tmp;
+            /* Fisher-Yates shuffle to create random access pattern */
+            unsigned int seed = (unsigned int)(arrayBytes ^ 0xDEADBEEF);
+            for (size_t i = numInts - 1; i > 0; --i) {
+                /* Simple LCG for deterministic shuffle */
+                seed = seed * 1103515245 + 12345;
+                size_t j = seed % (i + 1);
+                int tmp = h_chain[i];
+                h_chain[i] = h_chain[j];
+                h_chain[j] = tmp;
+            }
+            /* Build a single cycle from the shuffled indices:
+               Each position i stores the next index in the chain.
+               h_chain[i] = h_chain[i+1] means "from position i, jump to shuffled index h_chain[i+1]". */
+            for (size_t i = 0; i < numInts - 1; ++i) {
+                h_chain[i] = h_chain[i + 1];
+            }
+            h_chain[numInts - 1] = h_chain[0];
+
+            /* Copy to device */
+            cudaCheck(cudaFree(d_chain));
+            cudaCheck(cudaMalloc(&d_chain, arrayBytes));
+            cudaCheck(cudaMemcpy(d_chain, h_chain.data(), arrayBytes, cudaMemcpyHostToDevice));
+
+            /* Warmup */
+            l1_chase_kernel<<<1, 1>>>(d_chain, (int)numInts, 1024, d_sink);
+            cudaCheck(cudaDeviceSynchronize());
+
+            /* Measure */
+            std::vector<float> times;
+            for (int r = 0; r < repeats; ++r) {
+                cudaCheck(cudaEventRecord(start));
+                l1_chase_kernel<<<1, 1>>>(d_chain, (int)numInts, iterations, d_sink);
+                cudaCheck(cudaEventRecord(stop));
+                cudaCheck(cudaEventSynchronize(stop));
+                float ms = 0;
+                cudaCheck(cudaEventElapsedTime(&ms, start, stop));
+                if (ms > 0) times.push_back(ms);
+            }
+
+            if (times.empty()) continue;
+            std::sort(times.begin(), times.end());
+            float median_ms = times[times.size() / 2];
+
+            /* Convert to microseconds per access */
+            double us_per_access = (median_ms * 1000.0) / iterations;
+
+            sizeResults.push_back(arrayBytes);
+            latencies.push_back(us_per_access);
+            std::cerr << "  " << std::setw(6) << (arrayBytes/1024) << " KB  |  "
+                      << std::fixed << std::setprecision(3) << std::setw(8) << median_ms << " ms  |  "
+                      << std::setprecision(4) << us_per_access << " us/access" << std::endl;
         }
-        /* Make it a cycle: last element points to first */
-        int head = h_chain[0];
-        for (size_t i = 0; i < numInts - 1; ++i) {
-            h_chain[h_chain[i]] = h_chain[i+1];
-        }
-        h_chain[h_chain[numInts - 1]] = head;
-
-        /* Copy to device */
-        cudaCheck(cudaFree(d_chain));
-        cudaCheck(cudaMalloc(&d_chain, arrayBytes));
-        cudaCheck(cudaMemcpy(d_chain, h_chain.data(), arrayBytes, cudaMemcpyHostToDevice));
-
-        /* Warmup */
-        l1_chase_kernel<<<1, 1>>>(d_chain, (int)numInts, 1024, d_sink);
-        cudaCheck(cudaDeviceSynchronize());
-
-        /* Measure */
-        std::vector<float> times;
-        for (int r = 0; r < repeats; ++r) {
-            cudaCheck(cudaEventRecord(start));
-            l1_chase_kernel<<<1, 1>>>(d_chain, (int)numInts, iterations, d_sink);
-            cudaCheck(cudaEventRecord(stop));
-            cudaCheck(cudaEventSynchronize(stop));
-            float ms = 0;
-            cudaCheck(cudaEventElapsedTime(&ms, start, stop));
-            if (ms > 0) times.push_back(ms);
-        }
-
-        if (times.empty()) continue;
-        std::sort(times.begin(), times.end());
-        float median_ms = times[times.size() / 2];
-
-        /* Convert to microseconds per access */
-        double us_per_access = (median_ms * 1000.0) / iterations;
-
-        sizeResults.push_back(arrayBytes);
-        latencies.push_back(us_per_access);
-        std::cerr << "  " << std::setw(6) << (arrayBytes/1024) << " KB  |  "
-                  << std::fixed << std::setprecision(3) << std::setw(8) << median_ms << " ms  |  "
-                  << std::setprecision(4) << us_per_access << " us/access" << std::endl;
+    } catch (...) {
+        cudaFree(d_chain);
+        cudaFree((void*)d_sink);
+        cudaEventDestroy(start);
+        cudaEventDestroy(stop);
+        cudaDeviceSetCacheConfig(static_cast<cudaFuncCache>(cacheBackup));
+        throw;
     }
 
     cudaCheck(cudaFree(d_chain));
