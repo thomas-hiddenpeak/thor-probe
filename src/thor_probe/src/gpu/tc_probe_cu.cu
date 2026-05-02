@@ -160,26 +160,32 @@ __global__ void test_warp_vote_probe(int* out) {
 
 template<typename KernelFn>
 static bool probe_kernel(KernelFn kernel, const char* label) {
-    float *d;
-    cudaCheck(cudaMalloc(&d, sizeof(float)));
-    cudaCheck(cudaMemset(d, 0, sizeof(float)));
+    float *d = nullptr;
+    try {
+        cudaCheck(cudaMalloc(&d, sizeof(float)));
+        cudaCheck(cudaMemset(d, 0, sizeof(float)));
 
-    kernel<<<1, 32>>>(d);
-    cudaError_t err = cudaGetLastError();
+        kernel<<<1, 32>>>(d);
+        cudaError_t err = cudaGetLastError();
 
-    float h = 0;
-    cudaCheck(cudaMemcpy(&h, d, sizeof(float), cudaMemcpyDeviceToHost));
-    cudaCheck(cudaFree(d));
+        float h = 0;
+        cudaCheck(cudaMemcpy(&h, d, sizeof(float), cudaMemcpyDeviceToHost));
+        cudaCheck(cudaFree(d));
+        d = nullptr;
 
-    if (err == cudaSuccess && h > 0.0f) {
-        LOG_INFO("ThorProbe", "  %s: supported (output=%.1f)", label, h);
-        return true;
-    } else {
-        if (err != cudaSuccess)
-            LOG_INFO("ThorProbe", "  %s: %s", label, cudaGetErrorString(err));
-        else
-            LOG_INFO("ThorProbe", "  %s: zero output", label);
-        return false;
+        if (err == cudaSuccess && h > 0.0f) {
+            LOG_INFO("ThorProbe", "  %s: supported (output=%.1f)", label, h);
+            return true;
+        } else {
+            if (err != cudaSuccess)
+                LOG_INFO("ThorProbe", "  %s: %s", label, cudaGetErrorString(err));
+            else
+                LOG_INFO("ThorProbe", "  %s: zero output", label);
+            return false;
+        }
+    } catch (...) {
+        cudaFree(d);
+        throw;
     }
 }
 
@@ -265,18 +271,24 @@ TcGen05Capability detect_tcgen05_capabilities(int device) {
 
     // Barrier (cluster mem fence via kernel test)
     {
-        int *d;
-        cudaCheck(cudaMalloc(&d, sizeof(int)));
-        cudaCheck(cudaMemset(d, 0, sizeof(int)));
-        test_barrier_probe<<<1, 32>>>(d);
-        cudaError_t err = cudaGetLastError();
-        int h = 0;
-        cudaCheck(cudaMemcpy(&h, d, sizeof(int), cudaMemcpyDeviceToHost));
-        cudaCheck(cudaFree(d));
+        int *d = nullptr;
+        try {
+            cudaCheck(cudaMalloc(&d, sizeof(int)));
+            cudaCheck(cudaMemset(d, 0, sizeof(int)));
+            test_barrier_probe<<<1, 32>>>(d);
+            cudaError_t err = cudaGetLastError();
+            int h = 0;
+            cudaCheck(cudaMemcpy(&h, d, sizeof(int), cudaMemcpyDeviceToHost));
+            cudaCheck(cudaFree(d));
+            d = nullptr;
 
-        cap.barrier.cluster_mem_fence_supported = (err == cudaSuccess && h != 0);
+            cap.barrier.cluster_mem_fence_supported = (err == cudaSuccess && h != 0);
 
-        LOG_INFO("ThorProbe", "  Cluster mem fence: %s", cap.barrier.cluster_mem_fence_supported ? "yes" : "no");
+            LOG_INFO("ThorProbe", "  Cluster mem fence: %s", cap.barrier.cluster_mem_fence_supported ? "yes" : "no");
+        } catch (...) {
+            cudaFree(d);
+            throw;
+        }
     }
 
     // tmEM — inferred from CC >= 11 + cluster_launch (no dedicated attribute)
@@ -291,20 +303,26 @@ TcGen05Capability detect_tcgen05_capabilities(int device) {
 
     // Async Copy (TMA cp.async) — verified by actual kernel execution
     {
-        int *d;
-        cudaCheck(cudaMalloc(&d, sizeof(int)));
-        cudaCheck(cudaMemset(d, 0, sizeof(int)));
-        test_tma_probe<<<1, 32>>>(d);
-        cudaError_t err = cudaGetLastError();
-        int h = 0;
-        cudaCheck(cudaMemcpy(&h, d, sizeof(int), cudaMemcpyDeviceToHost));
-        cudaCheck(cudaFree(d));
+        int *d = nullptr;
+        try {
+            cudaCheck(cudaMalloc(&d, sizeof(int)));
+            cudaCheck(cudaMemset(d, 0, sizeof(int)));
+            test_tma_probe<<<1, 32>>>(d);
+            cudaError_t err = cudaGetLastError();
+            int h = 0;
+            cudaCheck(cudaMemcpy(&h, d, sizeof(int), cudaMemcpyDeviceToHost));
+            cudaCheck(cudaFree(d));
+            d = nullptr;
 
-        cap.async_copy.tcgen05_cp = (err == cudaSuccess && h != 0);
-        cap.async_copy.shared_mem_fence = cap.async_copy.tcgen05_cp;
-        cap.async_copy.barrier_notify = cap.async_copy.tcgen05_cp && cap.barrier.cluster_mem_fence_supported;
+            cap.async_copy.tcgen05_cp = (err == cudaSuccess && h != 0);
+            cap.async_copy.shared_mem_fence = cap.async_copy.tcgen05_cp;
+            cap.async_copy.barrier_notify = cap.async_copy.tcgen05_cp && cap.barrier.cluster_mem_fence_supported;
 
-        LOG_INFO("ThorProbe", "  cp.async (TMA): %s", cap.async_copy.tcgen05_cp ? "yes" : "no");
+            LOG_INFO("ThorProbe", "  cp.async (TMA): %s", cap.async_copy.tcgen05_cp ? "yes" : "no");
+        } catch (...) {
+            cudaFree(d);
+            throw;
+        }
     }
 
     // Warp Shuffle
@@ -314,18 +332,24 @@ TcGen05Capability detect_tcgen05_capabilities(int device) {
 
     // Warp Vote
     {
-        int *d;
-        cudaCheck(cudaMalloc(&d, sizeof(int)));
-        cudaCheck(cudaMemset(d, 0, sizeof(int)));
-        test_warp_vote_probe<<<1, 32>>>(d);
-        cudaError_t err = cudaGetLastError();
-        int h = 0;
-        cudaCheck(cudaMemcpy(&h, d, sizeof(int), cudaMemcpyDeviceToHost));
-        cudaCheck(cudaFree(d));
+        int *d = nullptr;
+        try {
+            cudaCheck(cudaMalloc(&d, sizeof(int)));
+            cudaCheck(cudaMemset(d, 0, sizeof(int)));
+            test_warp_vote_probe<<<1, 32>>>(d);
+            cudaError_t err = cudaGetLastError();
+            int h = 0;
+            cudaCheck(cudaMemcpy(&h, d, sizeof(int), cudaMemcpyDeviceToHost));
+            cudaCheck(cudaFree(d));
+            d = nullptr;
 
-        cap.warp.vote_supported = (err == cudaSuccess && h != 0);
-        LOG_INFO("ThorProbe", "  Warp Vote: %s (output=%d)",
-                  cap.warp.vote_supported ? "yes" : "no", h);
+            cap.warp.vote_supported = (err == cudaSuccess && h != 0);
+            LOG_INFO("ThorProbe", "  Warp Vote: %s (output=%d)",
+                      cap.warp.vote_supported ? "yes" : "no", h);
+        } catch (...) {
+            cudaFree(d);
+            throw;
+        }
     }
 
     return cap;

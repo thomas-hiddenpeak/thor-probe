@@ -54,7 +54,7 @@ __global__ void warp_scheduler_probe_kernel(
 
     if (lane_id == 0) {
         if (warp_id == 0) *out = acc_a;
-        else              *out = *out + acc_a + warp_id;
+        else              atomicAdd((unsigned int*)out, acc_a + warp_id);
     }
 }
 
@@ -448,11 +448,13 @@ size_t detect_l1_cache_size(int device) {
 
             /* Copy to device */
             cudaCheck(cudaFree(d_chain));
+            d_chain = nullptr;
             cudaCheck(cudaMalloc(&d_chain, arrayBytes));
             cudaCheck(cudaMemcpy(d_chain, h_chain.data(), arrayBytes, cudaMemcpyHostToDevice));
 
             /* Warmup */
             l1_chase_kernel<<<1, 1>>>(d_chain, (int)numInts, 1024, d_sink);
+            cudaCheck(cudaGetLastError());
             cudaCheck(cudaDeviceSynchronize());
 
             /* Measure */

@@ -277,6 +277,10 @@ GpuDeviceProps query_device_props(int device) {
     for (int id = 1; id <= 147; id++) {
         int value = 0;
         err = cudaDeviceGetAttribute(&value, (cudaDeviceAttr)id, device);
+        if (err != cudaSuccess && err != cudaErrorInvalidValue) {
+            LOG_WARN("GPU", "cudaDeviceGetAttribute(%d) failed: %s", id, cudaGetErrorString(err));
+            continue;
+        }
         if (err == cudaSuccess) {
             std::string name = "unknown";
             auto it = g_attr_names.find(id);
