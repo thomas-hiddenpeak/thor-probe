@@ -1,3 +1,4 @@
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -7,6 +8,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "probe_schema.h"
@@ -35,6 +37,8 @@ static void print_usage(const char* prog) {
     std::cerr << "Usage: " << prog << " [OPTIONS]\n"
               << "  DEVICE    CUDA device index (default: 0)\n"
               << "  --json    Output as JSON instead of text\n"
+              << "  --samples N  Run deep_sm probes N times, report mean/stddev (default: 1)\n"
+              << "  --sustain SEC  Sustained telemetry mode, poll every second for SEC seconds\n"
               << "  --help    Show this message\n";
 }
 
@@ -375,6 +379,7 @@ static void json_print_result(const FullProbeResult& result) {
     out << "{\n";
     out << "  \"platform\": " << json_str(result.platform) << ",\n";
     out << "  \"version\": " << json_str(result.version) << ",\n";
+    out << "  \"schema_version\": \"1.0\",\n";
     out << "  \"timestamp_s\": " << std::fixed << std::setprecision(1) << result.timestamp_s << std::defaultfloat << ",\n";
 
     /* gpu section */
@@ -502,9 +507,31 @@ static void json_print_result(const FullProbeResult& result) {
     out << "}\n";
 }
 
+static std::pair<int, double> compute_mean_std(const std::vector<int>& vals) {
+    double sum = 0;
+    for (int v : vals) sum += v;
+    double mean = sum / vals.size();
+    double sq_sum = 0;
+    for (int v : vals) sq_sum += (v - mean) * (v - mean);
+    double stddev = std::sqrt(sq_sum / vals.size());
+    return {static_cast<int>(std::round(mean)), stddev};
+}
+
+static std::pair<size_t, double> compute_mean_std(const std::vector<size_t>& vals) {
+    double sum = 0;
+    for (size_t v : vals) sum += v;
+    double mean = sum / vals.size();
+    double sq_sum = 0;
+    for (size_t v : vals) sq_sum += (v - mean) * (v - mean);
+    double stddev = std::sqrt(sq_sum / vals.size());
+    return {static_cast<size_t>(std::round(mean)), stddev};
+}
+
 int main(int argc, char* argv[]) {
     int device = 0;
     bool json_out = false;
+    int samples = 1;
+    int sustain_seconds = 0;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -513,6 +540,52 @@ int main(int argc, char* argv[]) {
             return 0;
         } else if (arg == "--json") {
             json_out = true;
+        } else if (arg == "--samples") {
+            if (i + 1 >= argc) {
+                std::cerr << "Error: --samples requires an argument" << std::endl;
+                print_usage(argv[0]);
+                return 1;
+            }
+            ++i;
+            try {
+                samples = std::stoi(argv[i]);
+                if (samples < 1) {
+                    std::cerr << "Error: --samples must be >= 1: " << argv[i] << std::endl;
+                    print_usage(argv[0]);
+                    return 1;
+                }
+            } catch (const std::invalid_argument&) {
+                std::cerr << "Error: invalid --samples value: " << argv[i] << std::endl;
+                print_usage(argv[0]);
+                return 1;
+            } catch (const std::out_of_range&) {
+                std::cerr << "Error: --samples value out of range: " << argv[i] << std::endl;
+                print_usage(argv[0]);
+                return 1;
+            }
+        } else if (arg == "--sustain") {
+            if (i + 1 >= argc) {
+                std::cerr << "Error: --sustain requires an argument" << std::endl;
+                print_usage(argv[0]);
+                return 1;
+            }
+            ++i;
+            try {
+                sustain_seconds = std::stoi(argv[i]);
+                if (sustain_seconds < 0) {
+                    std::cerr << "Error: --sustain must be non-negative: " << argv[i] << std::endl;
+                    print_usage(argv[0]);
+                    return 1;
+                }
+            } catch (const std::invalid_argument&) {
+                std::cerr << "Error: invalid --sustain value: " << argv[i] << std::endl;
+                print_usage(argv[0]);
+                return 1;
+            } catch (const std::out_of_range&) {
+                std::cerr << "Error: --sustain value out of range: " << argv[i] << std::endl;
+                print_usage(argv[0]);
+                return 1;
+            }
         } else if (arg[0] == '-') {
             std::cerr << "Error: unrecognized option: " << arg << std::endl;
             print_usage(argv[0]);
@@ -585,8 +658,56 @@ int main(int argc, char* argv[]) {
             result.gpu.tcgen05 = detect_tcgen05_capabilities(device);
             out << "[tcgen05] Capabilities detected" << std::endl;
 
-            result.gpu.deep_sm = run_deep_sm_probe(device);
-            out << "[deep_sm] Dynamic probes complete" << std::endl;
+            if (samples > 1) {
+                out << "[deep_sm] Running " << samples << " samples..." << std::endl;
+                std::vector<DeepSmResult> samples_vec;
+                samples_vec.reserve(samples);
+                for (int s = 0; s < samples; ++s) {
+                    samples_vec.push_back(run_deep_sm_probe(device));
+                }
+                DeepSmResult avg;
+                auto avg_int = [&](auto getter) -> std::pair<int, double> {
+                    std::vector<int> vals;
+                    vals.reserve(samples);
+                    for (const auto& samp : samples_vec) vals.push_back(getter(samp));
+                    return compute_mean_std(vals);
+                };
+                auto avg_size = [&](auto getter) -> std::pair<size_t, double> {
+                    std::vector<size_t> vals;
+                    vals.reserve(samples);
+                    for (const auto& samp : samples_vec) vals.push_back(getter(samp));
+                    return compute_mean_std(vals);
+                };
+                auto fmt_std = [](int n, double sd) -> std::string {
+                    if (n <= 1) return "";
+                    std::ostringstream oss;
+                    oss << "mean of " << n << " samples (σ=" << std::fixed << std::setprecision(1) << sd << ")";
+                    return oss.str();
+                };
+                auto [v1, s1] = avg_int([](const DeepSmResult& r){ return r.warp_schedulers_per_sm.value; });
+                avg.warp_schedulers_per_sm = IntSourced(v1, ProbeSource::dynamic_probe, fmt_std(samples, s1));
+                auto [v2, s2] = avg_int([](const DeepSmResult& r){ return r.smem_banks.value; });
+                avg.smem_banks = IntSourced(v2, ProbeSource::dynamic_probe, fmt_std(samples, s2));
+                auto [v3, s3] = avg_int([](const DeepSmResult& r){ return r.smem_bank_width_bits.value; });
+                avg.smem_bank_width_bits = IntSourced(v3, ProbeSource::dynamic_probe, fmt_std(samples, s3));
+                auto [v4, s4] = avg_size([](const DeepSmResult& r){ return r.l1_cache_size_per_sm.value; });
+                avg.l1_cache_size_per_sm = SizeSourced(v4, ProbeSource::dynamic_probe, fmt_std(samples, s4));
+                auto [v5, s5] = avg_int([](const DeepSmResult& r){ return r.max_regs_per_thread.value; });
+                avg.max_regs_per_thread = IntSourced(v5, ProbeSource::dynamic_probe, fmt_std(samples, s5));
+                auto [v6, s6] = avg_int([](const DeepSmResult& r){ return r.max_shared_per_block.value; });
+                avg.max_shared_per_block = IntSourced(v6, ProbeSource::dynamic_probe, fmt_std(samples, s6));
+                auto [v7, s7] = avg_int([](const DeepSmResult& r){ return r.max_registers_per_sm.value; });
+                avg.max_registers_per_sm = IntSourced(v7, ProbeSource::dynamic_probe, fmt_std(samples, s7));
+                auto [v8, s8] = avg_int([](const DeepSmResult& r){ return r.max_shared_per_sm.value; });
+                avg.max_shared_per_sm = IntSourced(v8, ProbeSource::dynamic_probe, fmt_std(samples, s8));
+                auto [v9, s9] = avg_int([](const DeepSmResult& r){ return r.max_threads_per_sm.value; });
+                avg.max_threads_per_sm = IntSourced(v9, ProbeSource::dynamic_probe, fmt_std(samples, s9));
+                result.gpu.deep_sm = avg;
+                out << "[deep_sm] Dynamic probes complete (" << samples << " samples)" << std::endl;
+            } else {
+                result.gpu.deep_sm = run_deep_sm_probe(device);
+                out << "[deep_sm] Dynamic probes complete" << std::endl;
+            }
         } catch (const std::exception& e) {
             std::cerr << "[gpu] FAILED: " << e.what() << std::endl;
             gpuAvailable = false;
@@ -643,9 +764,30 @@ int main(int argc, char* argv[]) {
 
     /* --- Telemetry --- */
     try {
-        deusridet::telemetry::TelemetryManager tm;
-        result.telemetry = tm.snapshot();
-        out << "[telemetry] Snapshot taken" << std::endl;
+        if (sustain_seconds > 0) {
+            out << "[telemetry] Sustained mode: " << sustain_seconds << "s" << std::endl;
+            deusridet::telemetry::TelemetryManager tm;
+            for (int sec = 0; sec < sustain_seconds; ++sec) {
+                auto ts = tm.snapshot();
+                if (json_out) {
+                    std::cout << "{\"timestamp\": " << (result.timestamp_s + sec)
+                              << ", \"gpu_mhz\": " << ts.clocks.gpu_mhz
+                              << ", \"gpu_temp_c\": " << ts.thermal.gpu_temp_c
+                              << ", \"gpu_power_mw\": " << ts.power.gpu_mw << "}\n";
+                    std::cout.flush();
+                } else {
+                    printf("[telemetry] %2ds | GPU: %4d MHz | %3d°C | %4d mW\n",
+                           sec, ts.clocks.gpu_mhz, ts.thermal.gpu_temp_c, ts.power.gpu_mw);
+                    fflush(stdout);
+                }
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+            result.telemetry = tm.snapshot();
+        } else {
+            deusridet::telemetry::TelemetryManager tm;
+            result.telemetry = tm.snapshot();
+            out << "[telemetry] Snapshot taken" << std::endl;
+        }
     } catch (const std::exception& e) {
         LOG_WARN("probe_main", "Telemetry probe failed: %s", e.what());
     } catch (...) {
