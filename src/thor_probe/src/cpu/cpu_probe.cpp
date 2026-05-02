@@ -120,7 +120,8 @@ static int count_cpus_from_sysfs() {
         for (auto& entry : std::filesystem::directory_iterator(cpu_base)) {
             if (entry.is_directory()) {
                 std::string name = entry.path().filename().string();
-                if (name.size() > 3 && name.substr(0, 3) == "cpu") {
+                if (name.size() > 3 && name.substr(0, 3) == "cpu" &&
+                    std::all_of(name.begin() + 3, name.end(), ::isdigit)) {
                     count++;
                 }
             }
@@ -137,7 +138,7 @@ static CpuResult::CacheInfo parse_cache_from_sysfs() {
     for (auto& entry : std::filesystem::directory_iterator(cpu0_cache)) {
         if (!entry.is_directory()) continue;
         auto idx = entry.path().filename().string();
-        if (idx.substr(0, 5) != "index") continue;
+        if (idx.substr(0, std::min(idx.size(), size_t(5))) != "index") continue;
 
         std::string level_str = read_file(entry.path() / "level");
         if (level_str.empty()) continue;
@@ -272,7 +273,7 @@ CpuResult probe_cpu() {
             if (proc.count("BogoMIPS")) {
                 try {
                     core.bogomips = static_cast<unsigned int>(
-                        std::stof(proc["BogoMIPS"]) * 100);
+                        std::stod(proc["BogoMIPS"]) * 100);
                 } catch (...) {
                     core.bogomips = 0;
                 }
