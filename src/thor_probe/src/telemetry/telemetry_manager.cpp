@@ -105,7 +105,8 @@ std::pair<unsigned int, unsigned int> TelemetryManager::ram_usage_mb() const {
             }
         }
     }
-    unsigned int used_mb = (total_kb - avail_kb) / 1024;
+    unsigned long used_kb = (total_kb > avail_kb) ? (total_kb - avail_kb) : 0;
+    unsigned int used_mb = used_kb / 1024;
     unsigned int total_mb = total_kb / 1024;
     return {used_mb, total_mb};
 }

@@ -1,11 +1,17 @@
 #include "gpu/tc_probe.h"
 #include "communis/log.h"
+#include "communis/cuda_check.h"
 
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <mma.h>
 #include <cuda_fp16.h>
 #include <cuda_fp8.h>
+
+/* Non-standard device attributes not yet in cuda_runtime.h */
+enum CustomDeviceAttr : int {
+    CUDA_DEV_ATTR_CLUSTER_LAUNCH = 120, // CU_DEVICE_ATTRIBUTE_CLUSTER_LAUNCH
+};
 
 /* ============================================================================
    FP16 MMA probe via nvcuda::wmma
@@ -155,15 +161,15 @@ __global__ void test_warp_vote_probe(int* out) {
 template<typename KernelFn>
 static bool probe_kernel(KernelFn kernel, const char* label) {
     float *d;
-    cudaMalloc(&d, sizeof(float));
-    cudaMemset(d, 0, sizeof(float));
+    cudaCheck(cudaMalloc(&d, sizeof(float)));
+    cudaCheck(cudaMemset(d, 0, sizeof(float)));
 
     kernel<<<1, 32>>>(d);
     cudaError_t err = cudaGetLastError();
 
     float h = 0;
-    cudaMemcpy(&h, d, sizeof(float), cudaMemcpyDeviceToHost);
-    cudaFree(d);
+    cudaCheck(cudaMemcpy(&h, d, sizeof(float), cudaMemcpyDeviceToHost));
+    cudaCheck(cudaFree(d));
 
     if (err == cudaSuccess && h > 0.0f) {
         LOG_INFO("ThorProbe", "  %s: supported (output=%.1f)", label, h);
@@ -181,10 +187,10 @@ namespace deusridet::probe {
 
 TcGen05Capability detect_tcgen05_capabilities(int device) {
     TcGen05Capability cap;
-    cudaSetDevice(device);
+    cudaCheck(cudaSetDevice(device));
 
     cudaDeviceProp prop;
-    cudaGetDeviceProperties(&prop, device);
+    cudaCheck(cudaGetDeviceProperties(&prop, device));
 
     if (prop.major < 11) {
         LOG_WARN("ThorProbe", "Device %d SM%d.%d - tcgen05 N/A",
@@ -235,11 +241,16 @@ TcGen05Capability detect_tcgen05_capabilities(int device) {
         cap.mma[static_cast<size_t>(MmaType::INT8)].k_size = 16;
     }
 
-    // Cluster launch (attr 120 = CU_DEVICE_ATTRIBUTE_CLUSTER_LAUNCH)
+    // Cluster launch (CU_DEVICE_ATTRIBUTE_CLUSTER_LAUNCH)
     {
         int val = 0;
-        if (cudaDeviceGetAttribute(&val, (cudaDeviceAttr)120, device) == cudaSuccess)
-            cap.barrier.cluster_launch = (val != 0);
+        {
+            cudaError_t attrErr = cudaDeviceGetAttribute(&val, static_cast<cudaDeviceAttr>(CustomDeviceAttr::CUDA_DEV_ATTR_CLUSTER_LAUNCH), device);
+            if (attrErr == cudaSuccess)
+                cap.barrier.cluster_launch = (val != 0);
+            else if (attrErr != cudaErrorInvalidValue)
+                cudaCheck(attrErr);
+        }
 
         cap.barrier.max_cluster_width = 8;
         cap.barrier.max_cluster_height = 1;
@@ -255,13 +266,13 @@ TcGen05Capability detect_tcgen05_capabilities(int device) {
     // Barrier (cluster mem fence via kernel test)
     {
         int *d;
-        cudaMalloc(&d, sizeof(int));
-        cudaMemset(d, 0, sizeof(int));
+        cudaCheck(cudaMalloc(&d, sizeof(int)));
+        cudaCheck(cudaMemset(d, 0, sizeof(int)));
         test_barrier_probe<<<1, 32>>>(d);
         cudaError_t err = cudaGetLastError();
         int h = 0;
-        cudaMemcpy(&h, d, sizeof(int), cudaMemcpyDeviceToHost);
-        cudaFree(d);
+        cudaCheck(cudaMemcpy(&h, d, sizeof(int), cudaMemcpyDeviceToHost));
+        cudaCheck(cudaFree(d));
 
         cap.barrier.cluster_mem_fence_supported = (err == cudaSuccess && h != 0);
 
@@ -281,13 +292,13 @@ TcGen05Capability detect_tcgen05_capabilities(int device) {
     // Async Copy (TMA cp.async) — verified by actual kernel execution
     {
         int *d;
-        cudaMalloc(&d, sizeof(int));
-        cudaMemset(d, 0, sizeof(int));
+        cudaCheck(cudaMalloc(&d, sizeof(int)));
+        cudaCheck(cudaMemset(d, 0, sizeof(int)));
         test_tma_probe<<<1, 32>>>(d);
         cudaError_t err = cudaGetLastError();
         int h = 0;
-        cudaMemcpy(&h, d, sizeof(int), cudaMemcpyDeviceToHost);
-        cudaFree(d);
+        cudaCheck(cudaMemcpy(&h, d, sizeof(int), cudaMemcpyDeviceToHost));
+        cudaCheck(cudaFree(d));
 
         cap.async_copy.tcgen05_cp = (err == cudaSuccess && h != 0);
         cap.async_copy.shared_mem_fence = cap.async_copy.tcgen05_cp;
@@ -304,13 +315,13 @@ TcGen05Capability detect_tcgen05_capabilities(int device) {
     // Warp Vote
     {
         int *d;
-        cudaMalloc(&d, sizeof(int));
-        cudaMemset(d, 0, sizeof(int));
+        cudaCheck(cudaMalloc(&d, sizeof(int)));
+        cudaCheck(cudaMemset(d, 0, sizeof(int)));
         test_warp_vote_probe<<<1, 32>>>(d);
         cudaError_t err = cudaGetLastError();
         int h = 0;
-        cudaMemcpy(&h, d, sizeof(int), cudaMemcpyDeviceToHost);
-        cudaFree(d);
+        cudaCheck(cudaMemcpy(&h, d, sizeof(int), cudaMemcpyDeviceToHost));
+        cudaCheck(cudaFree(d));
 
         cap.warp.vote_supported = (err == cudaSuccess && h != 0);
         LOG_INFO("ThorProbe", "  Warp Vote: %s (output=%d)",

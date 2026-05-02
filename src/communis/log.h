@@ -5,6 +5,7 @@
  */
 #pragma once
 
+#include <atomic>
 #include <cstdio>
 #include <ctime>
 #include <cstdarg>
@@ -24,17 +25,34 @@ inline const char* level_str(Level l) {
     return "???";
 }
 
-inline Level g_min_level = Level::INFO;
+inline std::atomic<Level> g_min_level{Level::INFO};
 
-inline void set_level(Level l) { g_min_level = l; }
+inline void set_level(Level l) { g_min_level.store(l, std::memory_order_relaxed); }
 
 inline void log(Level level, const char* module, const char* fmt, ...) {
-    if (level < g_min_level) return;
+    if (level < g_min_level.load(std::memory_order_relaxed)) return;
 
     struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
     struct tm tm;
-    localtime_r(&ts.tv_sec, &tm);
+
+    if (clock_gettime(CLOCK_REALTIME, &ts) != 0) {
+        time_t now = time(nullptr);
+        ts.tv_sec = now;
+        ts.tv_nsec = 0;
+    }
+    if (!localtime_r(&ts.tv_sec, &tm)) {
+        struct tm* tmPtr = localtime(&ts.tv_sec);
+        if (tmPtr) tm = *tmPtr;
+        else {
+            tm = {};
+            tm.tm_year = 0;
+            tm.tm_mon = 0;
+            tm.tm_mday = 1;
+            tm.tm_hour = 0;
+            tm.tm_min = 0;
+            tm.tm_sec = 0;
+        }
+    }
 
     fprintf(stderr, "[%02d:%02d:%02d.%03ld] [%5s] [%s] ",
             tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec / 1000000,

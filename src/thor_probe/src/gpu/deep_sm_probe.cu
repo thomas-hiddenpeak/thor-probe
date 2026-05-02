@@ -1,6 +1,7 @@
 #include "gpu/deep_sm_probe.h"
 
 #include <cuda_runtime.h>
+#include "communis/cuda_check.h"
 #include <device_launch_parameters.h>
 #include <cstdio>
 #include <cmath>
@@ -126,9 +127,9 @@ __global__ void l1_chase_kernel(const int* __restrict__ next, int chain_length, 
 namespace deusridet::probe {
 
 int detect_warp_schedulers(int device) {
-    cudaSetDevice(device);
+    cudaCheck(cudaSetDevice(device));
     cudaDeviceProp prop;
-    cudaGetDeviceProperties(&prop, device);
+    cudaCheck(cudaGetDeviceProperties(&prop, device));
 
     std::cerr << "[DeepSMProbe] GPU: " << prop.name
               << "  SM " << prop.major << "." << prop.minor
@@ -148,11 +149,11 @@ int detect_warp_schedulers(int device) {
     std::vector<int>    valid_cnt(num_points, 0);
 
     unsigned int* d_out = nullptr;
-    cudaMalloc(&d_out, sizeof(unsigned int));
+    cudaCheck(cudaMalloc(&d_out, sizeof(unsigned int)));
 
     cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
+    cudaCheck(cudaEventCreate(&start));
+    cudaCheck(cudaEventCreate(&stop));
 
     /* Warmup all configurations */
     for (int t = 0; t < num_points; ++t) {
@@ -160,7 +161,7 @@ int detect_warp_schedulers(int device) {
         int block_size = active * 32;
         warp_scheduler_probe_kernel<<<1, block_size>>>(d_out, active, WARP_ITERATIONS);
     }
-    cudaDeviceSynchronize();
+    cudaCheck(cudaDeviceSynchronize());
 
     for (int t = 0; t < num_points; ++t) {
         int active = warp_counts[t];
@@ -169,15 +170,16 @@ int detect_warp_schedulers(int device) {
         /* Run multiple times and take median */
         std::vector<double> times;
         for (int r = 0; r < MEASURE_REPEATS; ++r) {
-            cudaEventRecord(start);
+            cudaCheck(cudaEventRecord(start));
             warp_scheduler_probe_kernel<<<1, block_size>>>(d_out, active, WARP_ITERATIONS);
-            cudaEventRecord(stop);
-            cudaEventSynchronize(stop);
+            cudaCheck(cudaEventRecord(stop));
+            cudaCheck(cudaEventSynchronize(stop));
 
             float ms = 0;
-            cudaEventElapsedTime(&ms, start, stop);
+            cudaCheck(cudaEventElapsedTime(&ms, start, stop));
 
-            if (cudaGetLastError() == cudaSuccess && ms > 0) {
+            cudaCheck(cudaGetLastError());
+            if (ms > 0) {
                 times.push_back(ms);
             }
         }
@@ -189,9 +191,9 @@ int detect_warp_schedulers(int device) {
         }
     }
 
-    cudaFree(d_out);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
+    cudaCheck(cudaFree(d_out));
+    cudaCheck(cudaEventDestroy(start));
+    cudaCheck(cudaEventDestroy(stop));
 
     /* Compute aggregate throughput for each warp count */
     /* throughput = totalInstructions / elapsedMs */
@@ -259,9 +261,9 @@ int detect_warp_schedulers(int device) {
 }
 
 std::pair<int, int> detect_shared_mem_banks(int device) {
-    cudaSetDevice(device);
+    cudaCheck(cudaSetDevice(device));
     cudaDeviceProp prop;
-    cudaGetDeviceProperties(&prop, device);
+    cudaCheck(cudaGetDeviceProperties(&prop, device));
 
     std::cerr << "\n[DeepSMProbe] === Shared Memory Bank Conflict Detection ===" << std::endl;
     std::cerr << "[DeepSMProbe] shared_mem_per_sm=" << prop.sharedMemPerMultiprocessor / 1024 << " KB" << std::endl;
@@ -281,11 +283,11 @@ std::pair<int, int> detect_shared_mem_banks(int device) {
     constexpr int repeats = 8;
 
     int* d_out = nullptr;
-    cudaMalloc(&d_out, sizeof(int));
+    cudaCheck(cudaMalloc(&d_out, sizeof(int)));
 
     cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
+    cudaCheck(cudaEventCreate(&start));
+    cudaCheck(cudaEventCreate(&stop));
 
     std::vector<std::vector<float>> all_times(num_strides, std::vector<float>(repeats));
 
@@ -293,23 +295,23 @@ std::pair<int, int> detect_shared_mem_banks(int device) {
     for (int s = 0; s < num_strides; ++s) {
         bank_conflict_probe_kernel<<<4, 128>>>(strides[s], num_accesses, d_out);
     }
-    cudaDeviceSynchronize();
+    cudaCheck(cudaDeviceSynchronize());
 
     for (int s = 0; s < num_strides; ++s) {
         for (int r = 0; r < repeats; ++r) {
-            cudaEventRecord(start);
+            cudaCheck(cudaEventRecord(start));
             bank_conflict_probe_kernel<<<4, 128>>>(strides[s], num_accesses, d_out);
-            cudaEventRecord(stop);
-            cudaEventSynchronize(stop);
+            cudaCheck(cudaEventRecord(stop));
+            cudaCheck(cudaEventSynchronize(stop));
             float ms = 0;
-            cudaEventElapsedTime(&ms, start, stop);
+            cudaCheck(cudaEventElapsedTime(&ms, start, stop));
             all_times[s][r] = ms;
         }
     }
 
-    cudaFree(d_out);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
+    cudaCheck(cudaFree(d_out));
+    cudaCheck(cudaEventDestroy(start));
+    cudaCheck(cudaEventDestroy(stop));
 
     /* Take median for each stride */
     std::vector<float> medians(num_strides);
@@ -373,17 +375,17 @@ static std::vector<size_t> get_l1_probe_sizes() {
 }
 
 size_t detect_l1_cache_size(int device) {
-    cudaSetDevice(device);
+    cudaCheck(cudaSetDevice(device));
     cudaDeviceProp prop;
-    cudaGetDeviceProperties(&prop, device);
+    cudaCheck(cudaGetDeviceProperties(&prop, device));
 
     std::cerr << "\n[DeepSMProbe] === L1 Cache Size Detection ===" << std::endl;
     std::cerr << "[DeepSMProbe] GPU: " << prop.name << std::endl;
 
     /* Set max L1 cache config */
     cudaFuncCache cacheBackup;
-    cudaDeviceGetCacheConfig(&cacheBackup);
-    cudaDeviceSetCacheConfig(cudaFuncCachePreferL1);
+    cudaCheck(cudaDeviceGetCacheConfig(&cacheBackup));
+    cudaCheck(cudaDeviceSetCacheConfig(cudaFuncCachePreferL1));
 
     const int iterations = 65536; /* Number of pointer hops per run */
     const int repeats = 6;
@@ -392,11 +394,11 @@ size_t detect_l1_cache_size(int device) {
 
     int* d_chain = nullptr;
     volatile int* d_sink = nullptr;
-    cudaMalloc(&d_sink, sizeof(int));
+    cudaCheck(cudaMalloc(&d_sink, sizeof(int)));
 
     cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
+    cudaCheck(cudaEventCreate(&start));
+    cudaCheck(cudaEventCreate(&stop));
 
     std::vector<size_t> sizeResults;
     std::vector<double> latencies; /* us per access */
@@ -427,23 +429,23 @@ size_t detect_l1_cache_size(int device) {
         h_chain[h_chain[numInts - 1]] = head;
 
         /* Copy to device */
-        cudaFree(d_chain);
-        if (cudaMalloc(&d_chain, arrayBytes) != cudaSuccess) break;
-        cudaMemcpy(d_chain, h_chain.data(), arrayBytes, cudaMemcpyHostToDevice);
+        cudaCheck(cudaFree(d_chain));
+        cudaCheck(cudaMalloc(&d_chain, arrayBytes));
+        cudaCheck(cudaMemcpy(d_chain, h_chain.data(), arrayBytes, cudaMemcpyHostToDevice));
 
         /* Warmup */
         l1_chase_kernel<<<1, 1>>>(d_chain, (int)numInts, 1024, d_sink);
-        cudaDeviceSynchronize();
+        cudaCheck(cudaDeviceSynchronize());
 
         /* Measure */
         std::vector<float> times;
         for (int r = 0; r < repeats; ++r) {
-            cudaEventRecord(start);
+            cudaCheck(cudaEventRecord(start));
             l1_chase_kernel<<<1, 1>>>(d_chain, (int)numInts, iterations, d_sink);
-            cudaEventRecord(stop);
-            cudaEventSynchronize(stop);
+            cudaCheck(cudaEventRecord(stop));
+            cudaCheck(cudaEventSynchronize(stop));
             float ms = 0;
-            cudaEventElapsedTime(&ms, start, stop);
+            cudaCheck(cudaEventElapsedTime(&ms, start, stop));
             if (ms > 0) times.push_back(ms);
         }
 
@@ -461,11 +463,11 @@ size_t detect_l1_cache_size(int device) {
                   << std::setprecision(4) << us_per_access << " us/access" << std::endl;
     }
 
-    cudaFree(d_chain);
-    cudaFree((void*)d_sink);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
-    cudaDeviceSetCacheConfig(static_cast<cudaFuncCache>(cacheBackup));
+    cudaCheck(cudaFree(d_chain));
+    cudaCheck(cudaFree((void*)d_sink));
+    cudaCheck(cudaEventDestroy(start));
+    cudaCheck(cudaEventDestroy(stop));
+    cudaCheck(cudaDeviceSetCacheConfig(static_cast<cudaFuncCache>(cacheBackup)));
 
     if (sizeResults.size() < 2) return 0;
 
@@ -527,13 +529,13 @@ struct OccupancyPoint {
 
 DeepSmResult run_occupancy_probe(int device) {
     DeepSmResult result;
-    cudaSetDevice(device);
+    cudaCheck(cudaSetDevice(device));
     cudaDeviceProp prop;
-    cudaGetDeviceProperties(&prop, device);
+    cudaCheck(cudaGetDeviceProperties(&prop, device));
 
     /* Get actual register usage of our probe kernel */
     cudaFuncAttributes attr;
-    cudaFuncGetAttributes(&attr, occupancy_probe_dummy_kernel);
+    cudaCheck(cudaFuncGetAttributes(&attr, occupancy_probe_dummy_kernel));
 
     std::cerr << std::endl;
     std::cerr << "[DeepSMProbe] === Occupancy Curve Analysis ===" << std::endl;
@@ -558,10 +560,9 @@ DeepSmResult run_occupancy_probe(int device) {
     std::cerr << "[DeepSMProbe] " << std::string(38, '-') << std::endl;
 
     for (int smem : smemSteps) {
-        if (smem > (int)prop.sharedMemPerBlock) break;
+        if (smem > (int)prop.sharedMemPerBlockOptin) break;
         int blocks = 0;
-        auto err = cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(&blocks, occupancy_probe_dummy_kernel, blockSize, (size_t)smem, (unsigned int)0);
-        if (err != cudaSuccess) continue;
+        cudaCheck(cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(&blocks, occupancy_probe_dummy_kernel, blockSize, (size_t)smem, (unsigned int)0));
 
         int totalThreads = blocks * blockSize;
         int totalWarps = blocks * (blockSize / 32);
@@ -589,8 +590,7 @@ DeepSmResult run_occupancy_probe(int device) {
     for (int bsz : blockSizes) {
         if (bsz > prop.maxThreadsPerBlock) break;
         int blocks = 0;
-        auto err = cudaOccupancyMaxActiveBlocksPerMultiprocessor(&blocks, occupancy_probe_dummy_kernel, bsz, 0);
-        if (err != cudaSuccess) continue;
+        cudaCheck(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&blocks, occupancy_probe_dummy_kernel, bsz, 0));
 
         int totalWarps = blocks * (bsz / 32);
         int totalThreads = blocks * bsz;

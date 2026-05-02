@@ -16,11 +16,13 @@ set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 # CUDA architecture: SM110a (Blackwell / NVIDIA Thor)
 # ============================================================================
 set(CMAKE_CUDA_ARCHITECTURES "110a" CACHE STRING "CUDA architectures" FORCE)
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} \
-    --expt-relaxed-constexpr \
-    -O3 --use_fast_math \
-    -Xptxas -O3")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr")
+
+# Config-specific optimization (Release / RelWithDebInfo only)
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -D_FORTIFY_SOURCE=2 -fstack-protector-strong")
+set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 -D_FORTIFY_SOURCE=2 -fstack-protector-strong")
+set(CMAKE_CUDA_FLAGS_RELEASE "${CMAKE_CUDA_FLAGS_RELEASE} -O3 --use_fast_math -Xptxas -O3")
+set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${CMAKE_CUDA_FLAGS_RELWITHDEBINFO} -O3 --use_fast_math -Xptxas -O3")
 
 # ============================================================================
 # Dependencies
@@ -28,20 +30,18 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
 find_package(CUDAToolkit REQUIRED)
 
 # ============================================================================
-# Include directories
+# Communis: common utilities static library
 # ============================================================================
-include_directories(
+set(COMMUNIS_SOURCES
+    src/communis/config.cpp
+    src/communis/thor.cpp
+)
+# timeline_logger.cpp depends on sensus — excluded from explicit list above
+add_library(communis STATIC ${COMMUNIS_SOURCES})
+target_include_directories(communis PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CUDAToolkit_INCLUDE_DIRS}
 )
-
-# ============================================================================
-# Communis: common utilities static library
-# ============================================================================
-file(GLOB_RECURSE COMMUNIS_SOURCES "src/communis/*.cpp")
-# timeline_logger.cpp depends on sensus — exclude
-list(FILTER COMMUNIS_SOURCES EXCLUDE REGEX "timeline_logger\\.cpp$")
-add_library(communis STATIC ${COMMUNIS_SOURCES})
 target_link_libraries(communis PRIVATE CUDA::cudart)
 
 # ============================================================================

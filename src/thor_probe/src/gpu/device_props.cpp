@@ -6,6 +6,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <mutex>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -23,12 +24,12 @@ namespace deusridet::probe {
    ============================================================================ */
 
 static std::unordered_map<int, std::string> g_attr_names;
+static std::once_flag g_attr_names_init;
 
 static void init_attr_names() {
-    if (!g_attr_names.empty()) return;
-
-    using P = std::pair<int, std::string>;
-    std::vector<P> names = {
+    std::call_once(g_attr_names_init, []() {
+        using P = std::pair<int, std::string>;
+        std::vector<P> names = {
         // Block / thread limits (1-14)
         {1,  "maxThreadsPerBlock"},
         {2,  "maxThreadsPerMultiProcessor"},
@@ -219,6 +220,7 @@ static void init_attr_names() {
     for (auto& [id, name] : names) {
         g_attr_names[id] = name;
     }
+    });
 }
 
 /* ============================================================================

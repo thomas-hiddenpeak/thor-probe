@@ -5,10 +5,22 @@
 #include <cstdio>
 #include <filesystem>
 #include <regex>
+#include <sstream>
 #include <sys/select.h>
 #include <unistd.h>
 
 namespace fs = std::filesystem;
+
+namespace {
+const std::regex gr3d_regex{R"(GR3D_FREQ\s+\[([^\]]*)\])"};
+const std::regex pva_regex{R"(PVA0_FREQ\s+\[[^\]]*@(\d+)(?:\s*\])?)"};
+const std::regex emc_regex{R"(EMC_FREQ\s+(\d+)%@(\d+))"};
+const std::regex cpu_freq_regex{R"(CPU(\d+)\s+@?(\d+))"};
+const std::regex cpu_util_regex{R"(CPU(\d+)\s+(\d+)%[^\d])"};
+const std::regex temp_regex{R"((\w+)@([0-9.]+)C)"};
+const std::regex power_regex{R"((VDD_\w+)\s+(\d+)mW/(\d+)mW)"};
+const std::regex ram_regex{R"(RAM\s+(\d+)/(\d+)MB)"};
+} // anonymous namespace
 
 namespace deusridet::telemetry {
 
@@ -30,6 +42,12 @@ TegraStatsSource::ParseResult TegraStatsSource::query_once(unsigned int timeout_
     }
 
     int fd = fileno(pipe);
+    if (fd < 0) {
+        LOG_ERROR("tegrastats", "fileno() failed");
+        pclose(pipe);
+        return result;
+    }
+
     fd_set read_fds;
     FD_ZERO(&read_fds);
     FD_SET(fd, &read_fds);
@@ -69,7 +87,6 @@ TegraStatsSource::ParseResult TegraStatsSource::parse_line(const std::string& li
 
     // Parse GR3D_FREQ @[freq0,freq1,freq2]
     {
-        std::regex gr3d_regex(R"(GR3D_FREQ\s+\[([^\]]*)\])");
         std::smatch m;
         if (std::regex_search(line, m, gr3d_regex)) {
             std::string array_str = m[1].str();
@@ -136,8 +153,6 @@ TegraStatsSource::ParseResult TegraStatsSource::parse_line(const std::string& li
         if (line.find("PVA0_FREQ off") != std::string::npos) {
             result.pva_off = true;
         } else {
-            // Try to extract frequency from bracket: [0%,0%@1215]
-            std::regex pva_regex(R"(PVA0_FREQ\s+\[[^\]]*@(\d+)(?:\s*\])?)");
             std::smatch m;
             if (std::regex_search(line, m, pva_regex)) {
                 try {
@@ -156,7 +171,6 @@ TegraStatsSource::ParseResult TegraStatsSource::parse_line(const std::string& li
 
     // Parse EMC_FREQ: e.g. "EMC_FREQ 0%@665" -> emc_bw_pct=0, emc_freq=665
     {
-        std::regex emc_regex(R"(EMC_FREQ\s+(\d+)%@(\d+))");
         std::smatch m;
         if (std::regex_search(line, m, emc_regex)) {
             try {
@@ -168,7 +182,6 @@ TegraStatsSource::ParseResult TegraStatsSource::parse_line(const std::string& li
 
     // Parse CPU frequencies: "CPU0 @1920" or "CPU0 1920MHz"
     {
-        std::regex cpu_freq_regex(R"(CPU(\d+)\s+@?(\d+))");
         auto begin = std::sregex_iterator(line.begin(), line.end(), cpu_freq_regex);
         auto end = std::sregex_iterator();
         for (auto it = begin; it != end; ++it) {
@@ -183,7 +196,6 @@ TegraStatsSource::ParseResult TegraStatsSource::parse_line(const std::string& li
 
     // Parse CPU utilization: "CPU0 5%"
     {
-        std::regex cpu_util_regex(R"(CPU(\d+)\s+(\d+)%[^\d])");
         auto begin = std::sregex_iterator(line.begin(), line.end(), cpu_util_regex);
         auto end = std::sregex_iterator();
         for (auto it = begin; it != end; ++it) {
@@ -198,7 +210,6 @@ TegraStatsSource::ParseResult TegraStatsSource::parse_line(const std::string& li
 
     // Parse temperatures: e.g. "GPU@31.0C  CPU_junction@48.0C"
     {
-        std::regex temp_regex(R"((\w+)@([0-9.]+)C)");
         auto begin = std::sregex_iterator(line.begin(), line.end(), temp_regex);
         auto end = std::sregex_iterator();
         for (auto it = begin; it != end; ++it) {
@@ -212,7 +223,6 @@ TegraStatsSource::ParseResult TegraStatsSource::parse_line(const std::string& li
 
     // Parse power rails: e.g. "VDD_SOC 200mW/8500mW"
     {
-        std::regex power_regex(R"((VDD_\w+)\s+(\d+)mW/(\d+)mW)");
         auto begin = std::sregex_iterator(line.begin(), line.end(), power_regex);
         auto end = std::sregex_iterator();
         for (auto it = begin; it != end; ++it) {
@@ -227,7 +237,6 @@ TegraStatsSource::ParseResult TegraStatsSource::parse_line(const std::string& li
 
     // Parse RAM: "RAM 2028/125772MB"
     {
-        std::regex ram_regex(R"(RAM\s+(\d+)/(\d+)MB)");
         std::smatch m;
         if (std::regex_search(line, m, ram_regex)) {
             try {

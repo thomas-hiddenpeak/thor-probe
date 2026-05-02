@@ -38,6 +38,8 @@ public:
 
     RingBuffer(const RingBuffer&) = delete;
     RingBuffer& operator=(const RingBuffer&) = delete;
+    RingBuffer(RingBuffer&&) = delete;
+    RingBuffer& operator=(RingBuffer&&) = delete;
 
     size_t push(const uint8_t* data, size_t len) {
         size_t h = head_.load(std::memory_order_relaxed);

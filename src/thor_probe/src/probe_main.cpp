@@ -24,6 +24,7 @@
 #include "system/network.h"
 #include "system/pcie.h"
 #include "telemetry/telemetry_manager.h"
+#include "communis/cuda_check.h"
 
 using namespace deusridet::probe;
 
@@ -242,23 +243,46 @@ static void print_telemetry(const TelemetrySnapshot& ts) {
 }
 
 static std::string json_str(const std::string& s) {
-    std::string out = "\"";
-    for (char c : s) {
-        if (c == '"') out += "\\\"";
-        else if (c == '\\') out += "\\\\";
-        else out += c;
+    std::string out;
+    out.reserve(s.size() + 8);
+    for (unsigned char c : s) {
+        switch (c) {
+            case '"':  out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\b': out += "\\b"; break;
+            case '\f': out += "\\f"; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default:
+                if (c < 0x20) {
+                    char buf[7];
+                    snprintf(buf, sizeof(buf), "\\u%04x", c);
+                    out += buf;
+                } else {
+                    out += static_cast<char>(c);
+                }
+                break;
+        }
     }
-    out += '"';
-    return out;
+    return "\"" + out + "\"";
 }
 
 static void json_print_result(const FullProbeResult& result) {
     auto& out = std::cout;
+    int sections = 0;
+    const int totalSections = 1 +
+        (result.cpu ? 1 : 0) +
+        (result.multimedia ? 1 : 0) +
+        (result.system ? 1 : 0) +
+        (result.telemetry ? 1 : 0);
+
     out << "{\n";
     out << "  \"platform\": " << json_str(result.platform) << ",\n";
     out << "  \"version\": " << json_str(result.version) << ",\n";
     out << "  \"timestamp_s\": " << result.timestamp_s << ",\n";
 
+    /* gpu section */
     out << "  \"gpu\": {\n";
     out << "    \"device\": {\n";
     auto& d = result.gpu.device;
@@ -298,7 +322,10 @@ static void json_print_result(const FullProbeResult& result) {
     } else {
         out << "    \"deep_sm\": null\n";
     }
-    out << "  },\n";
+    out << "  }";
+    sections++;
+    if (sections < totalSections) out << ",";
+    out << "\n";
 
     if (result.cpu) {
         auto& c = *result.cpu;
@@ -306,7 +333,10 @@ static void json_print_result(const FullProbeResult& result) {
         out << "    \"architecture\": " << json_str(c.architecture) << ",\n";
         out << "    \"model_name\": " << json_str(c.model_name) << ",\n";
         out << "    \"core_count\": " << c.core_count << "\n";
-        out << "  },\n";
+        out << "  }";
+        sections++;
+        if (sections < totalSections) out << ",";
+        out << "\n";
     }
 
     if (result.multimedia) {
@@ -316,14 +346,20 @@ static void json_print_result(const FullProbeResult& result) {
         out << "    \"nvdec\": { \"status\": " << json_str(m.nvdec.status) << " },\n";
         out << "    \"pva\": { \"status\": " << json_str(m.pva.status) << ", \"clock_mhz\": " << m.pva.clock_mhz << " },\n";
         out << "    \"ofa\": { \"status\": " << json_str(m.ofa.status) << " }\n";
-        out << "  },\n";
+        out << "  }";
+        sections++;
+        if (sections < totalSections) out << ",";
+        out << "\n";
     }
 
     if (result.system) {
         auto& s = *result.system;
         out << "  \"system\": {\n";
         out << "    \"memory\": { \"type\": " << json_str(s.memory.type) << ", \"total_bytes\": " << s.memory.total_bytes << " }\n";
-        out << "  },\n";
+        out << "  }";
+        sections++;
+        if (sections < totalSections) out << ",";
+        out << "\n";
     }
 
     if (result.telemetry) {
@@ -332,7 +368,10 @@ static void json_print_result(const FullProbeResult& result) {
         out << "    \"gpu_mhz\": " << t.clocks.gpu_mhz << ",\n";
         out << "    \"gpu_temp_c\": " << t.thermal.gpu_temp_c << ",\n";
         out << "    \"gpu_power_mw\": " << t.power.gpu_mw << "\n";
-        out << "  }\n";
+        out << "  }";
+        sections++;
+        if (sections < totalSections) out << ",";
+        out << "\n";
     }
 
     out << "}\n";
@@ -354,39 +393,47 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    auto& out = json_out ? std::cerr : std::cout;
+    const char* banner = "DeusRidet-Thor Hardware Probe v0.2.0\n"
+                         "=====================================\n";
+    if (json_out) {
+        std::cerr << banner;
+    } else {
+        std::cout << banner;
+    }
 
-    out << "DeusRidet-Thor Hardware Probe v0.2.0" << std::endl;
-    out << "=====================================" << std::endl;
+    auto& out = json_out ? std::cerr : std::cout;
 
     FullProbeResult result;
     result.timestamp_s = static_cast<double>(std::time(nullptr));
     result.version = "0.2.0";
 
-    /* --- GPU --- */
-    try {
+    /* --- GPU device validation --- */
+    int deviceCount = 0;
+    bool gpuAvailable = false;
+    cudaError_t err = cudaGetDeviceCount(&deviceCount);
+    if (err == cudaSuccess && deviceCount > 0 && device < deviceCount) {
+        cudaCheck(cudaSetDevice(device));
+        gpuAvailable = true;
+    } else if (err != cudaSuccess) {
+        LOG_WARN("GPU", "cudaGetDeviceCount failed: %s", cudaGetErrorString(err));
+    } else if (deviceCount == 0) {
+        LOG_WARN("GPU", "No CUDA devices available");
+    } else {
+        LOG_ERROR("GPU", "Invalid device %d (only %d devices)", device, deviceCount);
+    }
+
+    if (gpuAvailable) {
         result.gpu.device = query_device_props(device);
         out << "[gpu] Probed: " << result.gpu.device.name << std::endl;
-    } catch (const std::exception& e) {
-        std::cerr << "[gpu] FAILED: " << e.what() << std::endl;
-    }
 
-    try {
         result.gpu.tcgen05 = detect_tcgen05_capabilities(device);
         out << "[tcgen05] Capabilities detected" << std::endl;
-    } catch (const std::exception& e) {
-        std::cerr << "[tcgen05] FAILED: " << e.what() << std::endl;
-    }
 
-    try {
         result.gpu.deep_sm = run_deep_sm_probe(device);
         out << "[deep_sm] Dynamic probes complete" << std::endl;
-    } catch (const std::exception& e) {
-        std::cerr << "[deep_sm] FAILED: " << e.what() << std::endl;
-    }
 
-    /* --- Refine device props with deep SM results --- */
-    result.gpu.device = refine_with_deep_sm(result.gpu.device, result.gpu.deep_sm);
+        result.gpu.device = refine_with_deep_sm(result.gpu.device, result.gpu.deep_sm);
+    }
 
 
     /* --- CPU --- */

@@ -203,7 +203,7 @@ std::vector<std::pair<std::string, unsigned int>> SysfsSource::all_power_rails_m
                     std::string channel = rail_label.substr(in_pos);
                     channel.erase(channel.find("_power"));
                     rail_label = "VDD_" + channel;
-                    for (auto& c : rail_label) c = static_cast<char>(toupper(c));
+                    for (auto& c : rail_label) c = static_cast<char>(toupper(static_cast<unsigned char>(c)));
                 }
                 rails.push_back({rail_label, mw});
             }
@@ -246,7 +246,7 @@ int SysfsSource::cpu_core_count() const {
                 // Check rest is digits
                 std::string digits = name.substr(3);
                 bool all_digits = true;
-                for (char c : digits) if (!isdigit(c)) { all_digits = false; break; }
+                for (char c : digits) if (!isdigit(static_cast<unsigned char>(c))) { all_digits = false; break; }
                 if (all_digits) count++;
             }
         }

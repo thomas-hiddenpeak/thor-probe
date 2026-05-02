@@ -16,6 +16,7 @@ target_include_directories(probe_gpu PUBLIC
     "${PROBE_SRC_DIR}"
 )
 target_compile_features(probe_gpu PUBLIC cxx_std_20)
+target_link_libraries(probe_gpu PUBLIC CUDA::cudart communis)
 
 # ==============================================================================
 # 2. probe_gpu_cu — CUDA kernel helpers (TC probe, etc.)
@@ -29,6 +30,7 @@ target_include_directories(probe_gpu_cu PUBLIC
     "${PROBE_SRC_DIR}"
 )
 set_target_properties(probe_gpu_cu PROPERTIES CUDA_ARCHITECTURES "110a")
+target_link_libraries(probe_gpu_cu PUBLIC CUDA::cudart communis)
 
 # ==============================================================================
 # 3. probe_multimedia — NVENC, NVDEC, NVJPEG, PVA, OFA, ISP, VIC
@@ -47,6 +49,7 @@ target_include_directories(probe_multimedia PUBLIC
     "${PROBE_SRC_DIR}"
 )
 target_compile_features(probe_multimedia PUBLIC cxx_std_20)
+target_link_libraries(probe_multimedia PRIVATE communis)
 
 # ==============================================================================
 # 4. probe_cpu — CPU topology and capabilities
@@ -59,6 +62,7 @@ target_include_directories(probe_cpu PUBLIC
     "${PROBE_SRC_DIR}"
 )
 target_compile_features(probe_cpu PUBLIC cxx_std_20)
+target_link_libraries(probe_cpu PRIVATE communis)
 
 # ==============================================================================
 # 5. probe_system — Memory, display, network, PCIe
@@ -74,6 +78,7 @@ target_include_directories(probe_system PUBLIC
     "${PROBE_SRC_DIR}"
 )
 target_compile_features(probe_system PUBLIC cxx_std_20)
+target_link_libraries(probe_system PRIVATE communis)
 
 # ==============================================================================
 # 6. probe_telemetry — sysfs, tegrastats, telemetry manager
@@ -88,6 +93,7 @@ target_include_directories(probe_telemetry PUBLIC
     "${PROBE_SRC_DIR}"
 )
 target_compile_features(probe_telemetry PUBLIC cxx_std_20)
+target_link_libraries(probe_telemetry PRIVATE communis)
 
 # ==============================================================================
 # 7. probe_output — JSON serializer and text formatter
@@ -101,6 +107,7 @@ target_include_directories(probe_output PUBLIC
     "${PROBE_SRC_DIR}"
 )
 target_compile_features(probe_output PUBLIC cxx_std_20)
+target_link_libraries(probe_output PRIVATE communis)
 
 # ==============================================================================
 # Feature flags
@@ -109,9 +116,7 @@ option(THOR_PROBE_ENABLE_NVENC  "Enable NVENC probe" ON)
 option(THOR_PROBE_ENABLE_NVDEC  "Enable NVDEC probe" ON)
 option(THOR_PROBE_ENABLE_NVJPEG "Enable NVJPEG probe" ON)
 option(THOR_PROBE_ENABLE_PVA    "Enable PVA probe" ON)
-option(THOR_PROBE_ENABLE_OFA    "Enable OFA probe (VPI)" ON)
-option(THOR_PROBE_ENABLE_NVML   "Link NVML (stub on Jetson)" OFF)
-option(THOR_PROBE_ENABLE_VPI    "Link VPI for PVA/OFA" ON)
+option(THOR_PROBE_ENABLE_OFA    "Enable OFA probe" ON)
 
 # Apply feature flags to multimedia probe
 target_compile_definitions(probe_multimedia PRIVATE
@@ -122,15 +127,10 @@ target_compile_definitions(probe_multimedia PRIVATE
     $<$<BOOL:${THOR_PROBE_ENABLE_OFA}>:THOR_PROBE_ENABLE_OFA>
 )
 
-# Apply NVML flag to telemetry
-target_compile_definitions(probe_telemetry PRIVATE
-    $<$<BOOL:${THOR_PROBE_ENABLE_NVML}>:THOR_PROBE_HAS_NVML>
-)
-
 # ==============================================================================
 # Executables
 # ==============================================================================
-add_executable(thor_probe "${PROBE_SRC_DIR}/probe_main.cpp" "${PROBE_SRC_DIR}/gpu/tc_probe_cu.cu")
+add_executable(thor_probe "${PROBE_SRC_DIR}/probe_main.cpp")
 target_include_directories(thor_probe PUBLIC
     "${PROBE_INCLUDE_DIR}"
     "${PROBE_SRC_DIR}"
