@@ -1,0 +1,24 @@
+name: thor-probe
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: CMake configure check (CPU-only)
+        run: |
+          echo "thor-probe requires CUDA 13.0+ and SM110a (NVIDIA Thor DevKit)"
+          echo "GitHub Actions cannot build this project without aarch64 + CUDA"
+          echo ""
+          echo "On-device build:"
+          echo "  mkdir -p build && cd build && cmake .. && make"
+          echo ""
+          echo "On-device tests:"
+          echo "  make thor_probe_tests"
+          echo "  ctest --output-on-failure"
