@@ -79,7 +79,7 @@ public:
     void begin_object(std::string_view key) {
         maybe_comma();
         write_indent();
-        oss_ << "\"" << escape(key) << ": {";
+        oss_ << "\"" << escape(key) << "\": {";
         if (!compact_) oss_ << "\n";
         ++indent_;
         need_comma_ = false;
@@ -103,7 +103,7 @@ public:
     void begin_array(std::string_view key) {
         maybe_comma();
         write_indent();
-        oss_ << "\"" << escape(key) << ": [";
+        oss_ << "\"" << escape(key) << "\": [";
         if (!compact_) oss_ << "\n";
         ++indent_;
         need_comma_ = false;
