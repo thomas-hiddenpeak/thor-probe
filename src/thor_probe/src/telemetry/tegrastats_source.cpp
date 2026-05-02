@@ -8,18 +8,41 @@
 #include <sstream>
 #include <sys/select.h>
 #include <unistd.h>
+#include <mutex>
 
 namespace fs = std::filesystem;
 
 namespace {
-const std::regex gr3d_regex{R"(GR3D_FREQ\s+\[([^\]]*)\])"};
-const std::regex pva_regex{R"(PVA0_FREQ\s+\[[^\]]*@(\d+)(?:\s*\])?)"};
-const std::regex emc_regex{R"(EMC_FREQ\s+(\d+)%@(\d+))"};
-const std::regex cpu_freq_regex{R"(CPU(\d+)\s+@?(\d+))"};
-const std::regex cpu_util_regex{R"(CPU(\d+)\s+(\d+)%[^\d])"};
-const std::regex temp_regex{R"((\w+)@([0-9.]+)C)"};
-const std::regex power_regex{R"((VDD_\w+)\s+(\d+)mW/(\d+)mW)"};
-const std::regex ram_regex{R"(RAM\s+(\d+)/(\d+)MB)"};
+
+// Thread-safe lazy initialization of regex patterns.
+// libstdc++ regex compilation is NOT thread-safe at first use, so we guard with call_once.
+struct RegexCache {
+    std::regex gr3d;
+    std::regex pva;
+    std::regex emc;
+    std::regex cpu_freq;
+    std::regex cpu_util;
+    std::regex temp;
+    std::regex power;
+    std::regex ram;
+
+    static RegexCache& instance() {
+        static std::once_flag flag;
+        static RegexCache cache;
+        std::call_once(flag, []() {
+            cache.gr3d    = std::regex{R"(GR3D_FREQ\s+\[([^\]]*)\])"};
+            cache.pva     = std::regex{R"(PVA0_FREQ\s+\[[^\]]*@(\d+)(?:\s*\])?)"};
+            cache.emc     = std::regex{R"(EMC_FREQ\s+(\d+)%@(\d+))"};
+            cache.cpu_freq  = std::regex{R"(CPU(\d+)\s+@?(\d+))"};
+            cache.cpu_util  = std::regex{R"(CPU(\d+)\s+(\d+)%[^\d])"};
+            cache.temp    = std::regex{R"((\w+)@([0-9.]+)C)"};
+            cache.power   = std::regex{R"((VDD_\w+)\s+(\d+)mW/(\d+)mW)"};
+            cache.ram     = std::regex{R"(RAM\s+(\d+)/(\d+)MB)"};
+        });
+        return cache;
+    }
+};
+
 } // anonymous namespace
 
 namespace deusridet::telemetry {
@@ -42,8 +65,8 @@ TegraStatsSource::ParseResult TegraStatsSource::query_once(unsigned int timeout_
     }
 
     int fd = fileno(pipe);
-    if (fd < 0) {
-        LOG_ERROR("tegrastats", "fileno() failed");
+    if (fd < 0 || fd >= FD_SETSIZE) {
+        LOG_WARN("TegraStats", "Invalid fd %d from popen (FD_SETSIZE=%d)", fd, FD_SETSIZE);
         pclose(pipe);
         return result;
     }
@@ -63,10 +86,14 @@ TegraStatsSource::ParseResult TegraStatsSource::query_once(unsigned int timeout_
         return result;
     }
 
-    char buf[4096];
+    char buf[8192];
     if (fgets(buf, sizeof(buf), pipe)) {
         std::string line(buf);
+        bool truncated = (!line.empty() && line.back() != '\n' && line.back() != '\r');
         while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) line.pop_back();
+        if (truncated) {
+            LOG_WARN("tegrastats", "output line truncated (buffer=8192, line length=%zu)", line.size());
+        }
         result = parse_line(line);
         result.raw_line = line;
     }
@@ -88,7 +115,7 @@ TegraStatsSource::ParseResult TegraStatsSource::parse_line(const std::string& li
     // Parse GR3D_FREQ @[freq0,freq1,freq2]
     {
         std::smatch m;
-        if (std::regex_search(line, m, gr3d_regex)) {
+        if (std::regex_search(line, m, RegexCache::instance().gr3d)) {
             std::string array_str = m[1].str();
             std::vector<unsigned int> freqs;
             std::istringstream iss(array_str);
@@ -154,7 +181,7 @@ TegraStatsSource::ParseResult TegraStatsSource::parse_line(const std::string& li
             result.pva_off = true;
         } else {
             std::smatch m;
-            if (std::regex_search(line, m, pva_regex)) {
+            if (std::regex_search(line, m, RegexCache::instance().pva)) {
                 try {
                     result.pva_freq = std::stoul(m[1].str());
                     result.pva_off = false;
@@ -172,7 +199,7 @@ TegraStatsSource::ParseResult TegraStatsSource::parse_line(const std::string& li
     // Parse EMC_FREQ: e.g. "EMC_FREQ 0%@665" -> emc_bw_pct=0, emc_freq=665
     {
         std::smatch m;
-        if (std::regex_search(line, m, emc_regex)) {
+        if (std::regex_search(line, m, RegexCache::instance().emc)) {
             try {
                 result.emc_bw_pct = std::stoul(m[1].str());
                 result.emc_freq = std::stoul(m[2].str());
@@ -182,7 +209,7 @@ TegraStatsSource::ParseResult TegraStatsSource::parse_line(const std::string& li
 
     // Parse CPU frequencies: "CPU0 @1920" or "CPU0 1920MHz"
     {
-        auto begin = std::sregex_iterator(line.begin(), line.end(), cpu_freq_regex);
+        auto begin = std::sregex_iterator(line.begin(), line.end(), RegexCache::instance().cpu_freq);
         auto end = std::sregex_iterator();
         for (auto it = begin; it != end; ++it) {
             try {
@@ -196,7 +223,7 @@ TegraStatsSource::ParseResult TegraStatsSource::parse_line(const std::string& li
 
     // Parse CPU utilization: "CPU0 5%"
     {
-        auto begin = std::sregex_iterator(line.begin(), line.end(), cpu_util_regex);
+        auto begin = std::sregex_iterator(line.begin(), line.end(), RegexCache::instance().cpu_util);
         auto end = std::sregex_iterator();
         for (auto it = begin; it != end; ++it) {
             try {
@@ -210,7 +237,7 @@ TegraStatsSource::ParseResult TegraStatsSource::parse_line(const std::string& li
 
     // Parse temperatures: e.g. "GPU@31.0C  CPU_junction@48.0C"
     {
-        auto begin = std::sregex_iterator(line.begin(), line.end(), temp_regex);
+        auto begin = std::sregex_iterator(line.begin(), line.end(), RegexCache::instance().temp);
         auto end = std::sregex_iterator();
         for (auto it = begin; it != end; ++it) {
             try {
@@ -224,7 +251,7 @@ TegraStatsSource::ParseResult TegraStatsSource::parse_line(const std::string& li
 
     // Parse power rails: e.g. "VDD_SOC 200mW/8500mW"
     {
-        auto begin = std::sregex_iterator(line.begin(), line.end(), power_regex);
+        auto begin = std::sregex_iterator(line.begin(), line.end(), RegexCache::instance().power);
         auto end = std::sregex_iterator();
         for (auto it = begin; it != end; ++it) {
             try {
@@ -239,7 +266,7 @@ TegraStatsSource::ParseResult TegraStatsSource::parse_line(const std::string& li
     // Parse RAM: "RAM 2028/125772MB"
     {
         std::smatch m;
-        if (std::regex_search(line, m, ram_regex)) {
+        if (std::regex_search(line, m, RegexCache::instance().ram)) {
             try {
                 result.ram_used_mb = std::stoul(m[1].str());
                 result.ram_total_mb = std::stoul(m[2].str());
@@ -253,7 +280,10 @@ TegraStatsSource::ParseResult TegraStatsSource::parse_line(const std::string& li
 std::optional<unsigned int> TegraStatsSource::extract_freq(const std::string& line, const std::string& token) {
     size_t pos = line.find(token);
     while (pos != std::string::npos) {
-        if (pos == 0 || line[pos - 1] == ' ') {
+        bool before_ok = (pos == 0 || line[pos - 1] == ' ');
+        size_t end = pos + token.size();
+        bool after_ok = (end >= line.size() || line[end] == ' ' || line[end] == '@' || line[end] == ']');
+        if (before_ok && after_ok) {
             break;
         }
         pos = line.find(token, pos + 1);

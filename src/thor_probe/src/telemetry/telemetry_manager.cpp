@@ -31,6 +31,9 @@ unsigned int TelemetryManager::gpu_temp_c() const {
     return 0;
 }
 
+// NOTE: These individual accessor methods each spawn a new `tegrastats` process
+// via query_once(). In production, prefer snapshot() which calls query_once() once
+// and populates all fields from a single invocation.
 unsigned int TelemetryManager::nvenc_clock_mhz(int instance) const {
     auto ts = tegra_stats_.query_once();
     if (instance < 2 && ts.nvenc_freq[instance].has_value()) {
@@ -73,7 +76,9 @@ unsigned int TelemetryManager::emc_bandwidth_mbps() const {
     auto ts = tegra_stats_.query_once();
     if (ts.emc_bw_pct.has_value() && ts.emc_freq.has_value()) {
         // EMC bandwidth = (percentage * frequency) as a rough approximation
-        return ts.emc_bw_pct.value() * ts.emc_freq.value();
+        uint64_t bw = static_cast<uint64_t>(ts.emc_bw_pct.value()) * ts.emc_freq.value() / 100;
+        if (bw > UINT32_MAX) return UINT32_MAX;
+        return static_cast<unsigned int>(bw);
     }
     return 0;
 }
@@ -91,18 +96,16 @@ std::pair<unsigned int, unsigned int> TelemetryManager::ram_usage_mb() const {
     while (std::getline(meminfo, line)) {
         if (line.rfind("MemTotal:", 0) == 0) {
             std::istringstream iss(line);
-            iss >> std::ws >> line;
-            auto space = line.find(' ');
-            if (space != std::string::npos) {
-                try { total_kb = std::stoul(line.substr(0, space)); } catch (...) {}
-            }
+            std::string key;
+            unsigned long value;
+            iss >> std::ws >> key >> value;
+            try { total_kb = value; } catch (...) {}
         } else if (line.rfind("MemAvailable:", 0) == 0) {
             std::istringstream iss(line);
-            iss >> std::ws >> line;
-            auto space = line.find(' ');
-            if (space != std::string::npos) {
-                try { avail_kb = std::stoul(line.substr(0, space)); } catch (...) {}
-            }
+            std::string key;
+            unsigned long value;
+            iss >> std::ws >> key >> value;
+            try { avail_kb = value; } catch (...) {}
         }
     }
     unsigned long used_kb = (total_kb > avail_kb) ? (total_kb - avail_kb) : 0;
@@ -167,11 +170,16 @@ deusridet::probe::TelemetrySnapshot TelemetryManager::snapshot() const {
         for (const auto& [name, pw] : ts_result.power_rails) {
             if (name.find("GPU") != std::string::npos) snap.power.gpu_mw = pw.first;
             if (name.find("SOC") != std::string::npos || name.find("CPU") != std::string::npos) snap.power.cpu_soc_mw = pw.first;
-            if (name.find("VIN") != std::string::npos || name.find("5V") != std::string::npos) snap.power.vin_sys_mw = pw.first;
+            if (name.find("VIN") != std::string::npos
+                || name == "5V"
+                || name.find("5V ") == 0
+                || name.find("_5V") != std::string::npos)
+                snap.power.vin_sys_mw = pw.first;
         }
     }
     if (ts_result.emc_bw_pct.has_value() && ts_result.emc_freq.has_value()) {
-        snap.power.emc_bw_mbps = ts_result.emc_bw_pct.value() * ts_result.emc_freq.value();
+        uint64_t bw = static_cast<uint64_t>(ts_result.emc_bw_pct.value()) * ts_result.emc_freq.value() / 100;
+        snap.power.emc_bw_mbps = (bw > UINT32_MAX) ? UINT32_MAX : static_cast<unsigned int>(bw);
     }
 
     // RAM

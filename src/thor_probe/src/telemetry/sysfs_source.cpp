@@ -2,6 +2,7 @@
 
 #include "communis/log.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -15,8 +16,7 @@ namespace deusridet::telemetry {
 std::optional<std::string> SysfsSource::read_file(const std::string& path) {
     std::ifstream ifs(path);
     if (!ifs.is_open()) return std::nullopt;
-    std::string content;
-    std::getline(ifs, content);
+    std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
     return content;
 }
 
@@ -266,7 +266,7 @@ std::vector<unsigned int> SysfsSource::available_frequencies_mhz(const std::stri
     std::istringstream iss(content.value());
     std::string token;
     while (std::getline(iss, token, ' ')) {
-        token.erase(token.find_first_of('\t'));
+        token.erase(std::remove(token.begin(), token.end(), '\t'), token.end());
         if (token.empty()) continue;
         try {
             // Values are in kHz, convert to MHz
