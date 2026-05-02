@@ -1,6 +1,9 @@
-# thor-probe
+# thor-probe v1.0.0
 
 Modular hardware probe for NVIDIA Thor (SM110a, Blackwell).
+
+[![CI](https://github.com/thomas-hiddenpeak/thor-probe/actions/workflows/ci.yml/badge.svg)](https://github.com/thomas-hiddenpeak/thor-probe/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ## Overview
 
@@ -27,12 +30,27 @@ Dynamic detection of SM-level microarchitecture properties:
 - **L1 Cache** — Detected via pointer-chasing with cache inflection analysis
 - **Occupancy** — Warps/SM and registers/thread from CUDA occupancy API
 
-## Build
+## Install
+
+### Quick Install (Recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/thomas-hiddenpeak/thor-probe/main/install.sh | bash
+```
+
+Or with a custom install prefix:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/thomas-hiddenpeak/thor-probe/main/install.sh | bash -s -- --prefix ~/bin
+```
+
+### Build from Source
 
 ```bash
 mkdir build && cd build
 cmake ..
 make
+sudo make install
 ```
 
 Requires CUDA 13.0+ and GCC 13+ on aarch64 (tested on Jetson AGX Thor DevKit).
@@ -40,8 +58,11 @@ Requires CUDA 13.0+ and GCC 13+ on aarch64 (tested on Jetson AGX Thor DevKit).
 ## Usage
 
 ```bash
-./build/src/thor_probe/thor_probe       # text output (default)
-./build/src/thor_probe/thor_probe --json  # JSON output
+thor_probe                # text output (default)
+thor_probe --json         # JSON output
+thor_probe 1              # target CUDA device 1
+thor_probe --samples 5    # repeat probe 5 times, report average
+thor_probe --sustain 30   # sustained telemetry for 30 seconds
 ```
 
 ## Example Output
@@ -49,7 +70,7 @@ Requires CUDA 13.0+ and GCC 13+ on aarch64 (tested on Jetson AGX Thor DevKit).
 ### Text Mode (Full)
 
 ```
-DeusRidet-Thor Hardware Probe v0.2.0
+DeusRidet-Thor Hardware Probe v1.0.0
 =====================================
 [gpu] Probed: NVIDIA Thor
 [tcgen05] Capabilities detected
@@ -255,6 +276,10 @@ thor-probe/
 │           ├── telemetry/  # sysfs/tegrastats
 │           └── output/     # JSON/text formatters
 ```
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

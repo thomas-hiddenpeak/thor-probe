@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24 FATAL_ERROR)
 
 # thor-probe: NVIDIA Thor (SM110a) hardware probe standalone tool
-project(thor-probe LANGUAGES CXX CUDA)
+project(thor-probe VERSION 1.0.0 LANGUAGES CXX CUDA)
 
 # ============================================================================
 # Build standards

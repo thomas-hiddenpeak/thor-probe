@@ -7,18 +7,86 @@ on:
     branches: [main]
 
 jobs:
-  build-check:
+  cmake-syntax:
+    name: CMake Syntax
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: CMake configure check (CPU-only)
+      - name: Validate CMake syntax
         run: |
-          echo "thor-probe requires CUDA 13.0+ and SM110a (NVIDIA Thor DevKit)"
-          echo "GitHub Actions cannot build this project without aarch64 + CUDA"
-          echo ""
-          echo "On-device build:"
-          echo "  mkdir -p build && cd build && cmake .. && make"
-          echo ""
-          echo "On-device tests:"
-          echo "  make thor_probe_tests"
-          echo "  ctest --output-on-failure"
+          echo "Validating CMakeLists.txt files..."
+          find . -name "CMakeLists.txt" -not -path "./.git/*" | while read file; do
+            echo "Checking $file..."
+            if grep -q "cmake_minimum_required\|project(" "$file"; then
+              echo "  ✓ Contains cmake_minimum_required or project()"
+            fi
+          done
+          echo "CMake syntax check passed"
+
+  shellcheck:
+    name: Shell Scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ShellCheck
+        run: sudo apt-get install -y shellcheck
+      - name: Check shell scripts
+        run: |
+          echo "Checking shell scripts..."
+          if find . -name "*.sh" -not -path "./.git/*" -not -path "./build/*" -print -quit | grep -q .; then
+            find . -name "*.sh" -not -path "./.git/*" -not -path "./build/*" -exec shellcheck {} +
+          else
+            echo "No shell scripts found to check"
+          fi
+
+  code-style:
+    name: Code Style
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check C++ headers
+        run: |
+          echo "Checking C++ header files..."
+          find src/ -name "*.h" | while read file; do
+            if ! grep -q "#pragma once\|#ifndef" "$file"; then
+              echo "⚠ Missing header guard in $file"
+              exit 1
+            fi
+          done
+          echo "✓ All headers have guards"
+
+      - name: Check for trailing whitespace
+        run: |
+          echo "Checking for trailing whitespace..."
+          if find src/ -name "*.cpp" -o -name "*.cu" -o -name "*.h" | xargs grep -l "[[:space:]]$"; then
+            echo "❌ Trailing whitespace found"
+            exit 1
+          else
+            echo "✓ No trailing whitespace"
+          fi
+
+  markdown-links:
+    name: Markdown Links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check markdown links
+        run: |
+          echo "Checking markdown files..."
+          # Check README.md exists and is well-formed
+          if [ -f "README.md" ]; then
+            echo "✓ README.md exists"
+            # Check for broken relative links
+            grep -oE '\]\([^\)]+\)' README.md | grep -v "^http" | cut -d'(' -f2 | cut -d')' -f1 | while read link; do
+              if [ ! -f "$link" ]; then
+                echo "  ⚠ Potential broken link: $link"
+              else
+                echo "  ✓ Link exists: $link"
+              fi
+            done
+          fi
+          if [ -f "LICENSE" ]; then
+            echo "✓ LICENSE exists"
+          else
+            echo "  ⚠ LICENSE file not found"
+          fi

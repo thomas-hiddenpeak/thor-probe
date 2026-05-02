@@ -610,7 +610,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    const char* banner = "DeusRidet-Thor Hardware Probe v0.2.0\n"
+    const char* banner = "DeusRidet-Thor Hardware Probe v1.0.0\n"
                          "=====================================\n";
     if (json_out) {
         std::cerr << banner;
@@ -622,7 +622,7 @@ int main(int argc, char* argv[]) {
 
     FullProbeResult result;
     result.timestamp_s = static_cast<double>(std::time(nullptr));
-    result.version = "0.2.0";
+    result.version = "1.0.0";
 
     // Spec reference for measured vs nominal comparison
     #ifdef THOR_PROBE_SPEC_MODEL_T5000
