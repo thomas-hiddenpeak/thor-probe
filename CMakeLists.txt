@@ -43,7 +43,8 @@ set(COMMUNIS_SOURCES
 # timeline_logger.cpp depends on sensus — excluded from explicit list above
 add_library(communis STATIC ${COMMUNIS_SOURCES})
 target_include_directories(communis PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+    $<INSTALL_INTERFACE:include>
 )
 target_include_directories(communis PRIVATE
     ${CUDAToolkit_INCLUDE_DIRS}
@@ -58,3 +59,20 @@ target_compile_options(communis PRIVATE
 # Thor Probe (modular architecture)
 # ============================================================================
 add_subdirectory(src/thor_probe)
+
+# ==============================================================================
+# Install rules and export targets
+# ==============================================================================
+install(TARGETS communis
+        EXPORT thor-probe-targets
+        ARCHIVE DESTINATION lib
+        INCLUDES DESTINATION include
+)
+install(DIRECTORY src/communis/
+        DESTINATION include/communis
+        FILES_MATCHING PATTERN "*.h"
+)
+install(DIRECTORY src/thor_probe/include/
+        DESTINATION include/thor_probe
+        FILES_MATCHING PATTERN "*.h"
+)

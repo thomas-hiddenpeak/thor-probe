@@ -12,7 +12,8 @@ add_library(probe_gpu STATIC
     "${PROBE_SRC_DIR}/gpu/device_props.cpp"
 )
 target_include_directories(probe_gpu PUBLIC
-    "${PROBE_INCLUDE_DIR}"
+    $<BUILD_INTERFACE:${PROBE_INCLUDE_DIR}>
+    $<INSTALL_INTERFACE:include/thor_probe>
 )
 target_include_directories(probe_gpu PRIVATE
     "${PROBE_SRC_DIR}"
@@ -29,7 +30,8 @@ add_library(probe_gpu_cu STATIC
     "${PROBE_SRC_DIR}/gpu/deep_sm_probe.cu"
 )
 target_include_directories(probe_gpu_cu PUBLIC
-    "${PROBE_INCLUDE_DIR}"
+    $<BUILD_INTERFACE:${PROBE_INCLUDE_DIR}>
+    $<INSTALL_INTERFACE:include/thor_probe>
 )
 target_include_directories(probe_gpu_cu PRIVATE
     "${PROBE_SRC_DIR}"
@@ -50,7 +52,8 @@ add_library(probe_multimedia STATIC
     "${PROBE_SRC_DIR}/multimedia/vic.cpp"
 )
 target_include_directories(probe_multimedia PUBLIC
-    "${PROBE_INCLUDE_DIR}"
+    $<BUILD_INTERFACE:${PROBE_INCLUDE_DIR}>
+    $<INSTALL_INTERFACE:include/thor_probe>
 )
 target_include_directories(probe_multimedia PRIVATE
     "${PROBE_SRC_DIR}"
@@ -66,7 +69,8 @@ add_library(probe_cpu STATIC
     "${PROBE_SRC_DIR}/cpu/cpu_probe.cpp"
 )
 target_include_directories(probe_cpu PUBLIC
-    "${PROBE_INCLUDE_DIR}"
+    $<BUILD_INTERFACE:${PROBE_INCLUDE_DIR}>
+    $<INSTALL_INTERFACE:include/thor_probe>
 )
 target_include_directories(probe_cpu PRIVATE
     "${PROBE_SRC_DIR}"
@@ -85,7 +89,8 @@ add_library(probe_system STATIC
     "${PROBE_SRC_DIR}/system/pcie.cpp"
 )
 target_include_directories(probe_system PUBLIC
-    "${PROBE_INCLUDE_DIR}"
+    $<BUILD_INTERFACE:${PROBE_INCLUDE_DIR}>
+    $<INSTALL_INTERFACE:include/thor_probe>
 )
 target_include_directories(probe_system PRIVATE
     "${PROBE_SRC_DIR}"
@@ -103,7 +108,8 @@ add_library(probe_telemetry STATIC
     "${PROBE_SRC_DIR}/telemetry/telemetry_manager.cpp"
 )
 target_include_directories(probe_telemetry PUBLIC
-    "${PROBE_INCLUDE_DIR}"
+    $<BUILD_INTERFACE:${PROBE_INCLUDE_DIR}>
+    $<INSTALL_INTERFACE:include/thor_probe>
 )
 target_include_directories(probe_telemetry PRIVATE
     "${PROBE_SRC_DIR}"
@@ -120,7 +126,8 @@ add_library(probe_output STATIC
     "${PROBE_SRC_DIR}/output/text_formatter.cpp"
 )
 target_include_directories(probe_output PUBLIC
-    "${PROBE_INCLUDE_DIR}"
+    $<BUILD_INTERFACE:${PROBE_INCLUDE_DIR}>
+    $<INSTALL_INTERFACE:include/thor_probe>
 )
 target_include_directories(probe_output PRIVATE
     "${PROBE_SRC_DIR}"
@@ -151,9 +158,9 @@ target_compile_definitions(probe_multimedia PRIVATE
 # Executables
 # ==============================================================================
 add_executable(thor_probe "${PROBE_SRC_DIR}/probe_main.cpp")
-target_include_directories(thor_probe PUBLIC
-    "${PROBE_INCLUDE_DIR}"
-    "${PROBE_SRC_DIR}"
+target_include_directories(thor_probe PRIVATE
+    ${PROBE_INCLUDE_DIR}
+    ${PROBE_SRC_DIR}
 )
 target_link_libraries(thor_probe PRIVATE
     probe_gpu
@@ -178,3 +185,33 @@ if(THOR_PROBE_SPEC_MODEL STREQUAL "T5000")
 elseif(THOR_PROBE_SPEC_MODEL STREQUAL "T4000")
   target_compile_definitions(thor_probe PRIVATE THOR_PROBE_SPEC_MODEL_T4000)
 endif()
+
+# ==============================================================================
+# Install all thor_probe targets
+# ==============================================================================
+install(TARGETS probe_gpu probe_gpu_cu probe_multimedia probe_cpu probe_system probe_telemetry probe_output thor_probe
+        EXPORT thor-probe-targets
+        ARCHIVE DESTINATION lib
+        RUNTIME DESTINATION bin
+)
+
+# Package config
+include(CMakePackageConfigHelpers)
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/thor-probe-config-version.cmake"
+    VERSION "0.2.0"
+    COMPATIBILITY SameMajorVersion
+)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/thor-probe-config.cmake"
+"include(\"\${CMAKE_CURRENT_LIST_DIR}/thor-probe-targets.cmake\")\n"
+)
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/thor-probe-config.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/thor-probe-config-version.cmake"
+    DESTINATION lib/cmake/thor-probe
+)
+install(EXPORT thor-probe-targets
+        FILE thor-probe-targets.cmake
+        NAMESPACE deusridet::
+        DESTINATION lib/cmake/thor-probe
+)
