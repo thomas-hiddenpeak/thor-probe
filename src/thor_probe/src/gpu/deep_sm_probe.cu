@@ -53,8 +53,7 @@ __global__ void warp_scheduler_probe_kernel(
     }
 
     if (lane_id == 0) {
-        if (warp_id == 0) *out = acc_a;
-        else              atomicAdd((unsigned int*)out, acc_a + warp_id);
+        atomicAdd((unsigned int*)out, acc_a + warp_id);
     }
 }
 
@@ -118,7 +117,7 @@ __global__ void l1_chase_kernel(const int* __restrict__ next, int chain_length, 
         idx = next[idx];
     }
 
-    *sink = idx;
+    if (threadIdx.x == 0 && blockIdx.x == 0) *sink = idx;
 }
 
 /* ==========================================================================
@@ -193,9 +192,9 @@ int detect_warp_schedulers(int device) {
             }
         }
     } catch (...) {
-        cudaFree(d_out);
-        cudaEventDestroy(start);
-        cudaEventDestroy(stop);
+        cudaError_t cleanup_err = cudaFree(d_out); (void)cleanup_err;
+        cleanup_err = cudaEventDestroy(start); (void)cleanup_err;
+        cleanup_err = cudaEventDestroy(stop); (void)cleanup_err;
         throw;
     }
 
@@ -319,9 +318,9 @@ std::pair<int, int> detect_shared_mem_banks(int device) {
             }
         }
     } catch (...) {
-        cudaFree(d_out);
-        cudaEventDestroy(start);
-        cudaEventDestroy(stop);
+        cudaError_t cleanup_err = cudaFree(d_out); (void)cleanup_err;
+        cleanup_err = cudaEventDestroy(start); (void)cleanup_err;
+        cleanup_err = cudaEventDestroy(stop); (void)cleanup_err;
         throw;
     }
 
@@ -483,10 +482,10 @@ size_t detect_l1_cache_size(int device) {
                       << std::setprecision(4) << us_per_access << " us/access" << std::endl;
         }
     } catch (...) {
-        cudaFree(d_chain);
-        cudaFree((void*)d_sink);
-        cudaEventDestroy(start);
-        cudaEventDestroy(stop);
+        cudaError_t cleanup_err = cudaFree(d_chain); (void)cleanup_err;
+        cleanup_err = cudaFree((void*)d_sink); (void)cleanup_err;
+        cleanup_err = cudaEventDestroy(start); (void)cleanup_err;
+        cleanup_err = cudaEventDestroy(stop); (void)cleanup_err;
         cudaDeviceSetCacheConfig(static_cast<cudaFuncCache>(cacheBackup));
         throw;
     }

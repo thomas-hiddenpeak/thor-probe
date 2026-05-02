@@ -184,7 +184,7 @@ static bool probe_kernel(KernelFn kernel, const char* label) {
             return false;
         }
     } catch (...) {
-        cudaFree(d);
+        cudaError_t cleanup_err = cudaFree(d); (void)cleanup_err;
         throw;
     }
 }
@@ -254,7 +254,7 @@ TcGen05Capability detect_tcgen05_capabilities(int device) {
             cudaError_t attrErr = cudaDeviceGetAttribute(&val, static_cast<cudaDeviceAttr>(CustomDeviceAttr::CUDA_DEV_ATTR_CLUSTER_LAUNCH), device);
             if (attrErr == cudaSuccess)
                 cap.barrier.cluster_launch = (val != 0);
-            else if (attrErr != cudaErrorInvalidValue)
+            else if (attrErr != cudaErrorNotSupported)
                 cudaCheck(attrErr);
         }
 
@@ -286,7 +286,7 @@ TcGen05Capability detect_tcgen05_capabilities(int device) {
 
             LOG_INFO("ThorProbe", "  Cluster mem fence: %s", cap.barrier.cluster_mem_fence_supported ? "yes" : "no");
         } catch (...) {
-            cudaFree(d);
+            cudaError_t cleanup_err = cudaFree(d); (void)cleanup_err;
             throw;
         }
     }
@@ -320,7 +320,7 @@ TcGen05Capability detect_tcgen05_capabilities(int device) {
 
             LOG_INFO("ThorProbe", "  cp.async (TMA): %s", cap.async_copy.tcgen05_cp ? "yes" : "no");
         } catch (...) {
-            cudaFree(d);
+            cudaError_t cleanup_err = cudaFree(d); (void)cleanup_err;
             throw;
         }
     }
@@ -347,7 +347,7 @@ TcGen05Capability detect_tcgen05_capabilities(int device) {
             LOG_INFO("ThorProbe", "  Warp Vote: %s (output=%d)",
                       cap.warp.vote_supported ? "yes" : "no", h);
         } catch (...) {
-            cudaFree(d);
+            cudaError_t cleanup_err = cudaFree(d); (void)cleanup_err;
             throw;
         }
     }
