@@ -269,6 +269,11 @@ static std::string json_str(const std::string& s) {
     return "\"" + out + "\"";
 }
 
+static bool gpu_is_empty(const GpuResult& r) {
+    return r.device.name.empty() && r.device.sm_count == 0
+        && !r.tcgen05.has_value() && !r.deep_sm.has_value();
+}
+
 static void json_print_result(const FullProbeResult& result) {
     auto& out = std::cout;
     int sections = 0;
@@ -284,47 +289,51 @@ static void json_print_result(const FullProbeResult& result) {
     out << "  \"timestamp_s\": " << result.timestamp_s << ",\n";
 
     /* gpu section */
-    out << "  \"gpu\": {\n";
-    out << "    \"device\": {\n";
-    auto& d = result.gpu.device;
-    out << "      \"name\": " << json_str(d.name) << ",\n";
-    out << "      \"compute_capability\": \"" << d.compute_major << "." << d.compute_minor << "\",\n";
-    out << "      \"sm_count\": " << d.sm_count << ",\n";
-    double gb = d.global_mem_gb();
-    out << "      \"global_mem_gb\": " << (std::isnan(gb) || std::isinf(gb) ? 0.0 : gb) << ",\n";
-    out << "      \"shared_mem_per_sm\": " << d.shared_mem_per_sm << ",\n";
-    out << "      \"regs_per_sm\": " << d.regs_per_sm << ",\n";
-    out << "      \"clock_rate_khz\": " << d.clock_rate_khz << ",\n";
-    out << "      \"max_clock_rate_khz\": " << d.clock_rate_max_khz << "\n";
-    out << "    },\n";
-
-    if (result.gpu.tcgen05) {
-        out << "    \"tcgen05\": {\n";
-        out << "      \"has_nvfp4\": " << (result.gpu.tcgen05->has_nvfp4() ? "true" : "false") << ",\n";
-        out << "      \"has_fp8\": " << (result.gpu.tcgen05->has_fp8() ? "true" : "false") << ",\n";
-        out << "      \"tmem_supported\": " << (result.gpu.tcgen05->tmem.supported ? "true" : "false") << "\n";
+    if (gpu_is_empty(result.gpu)) {
+        out << "  \"gpu\": null";
+    } else {
+        out << "  \"gpu\": {\n";
+        out << "    \"device\": {\n";
+        auto& d = result.gpu.device;
+        out << "      \"name\": " << json_str(d.name) << ",\n";
+        out << "      \"compute_capability\": \"" << d.compute_major << "." << d.compute_minor << "\",\n";
+        out << "      \"sm_count\": " << d.sm_count << ",\n";
+        double gb = d.global_mem_gb();
+        out << "      \"global_mem_gb\": " << (std::isnan(gb) || std::isinf(gb) ? 0.0 : gb) << ",\n";
+        out << "      \"shared_mem_per_sm\": " << d.shared_mem_per_sm << ",\n";
+        out << "      \"regs_per_sm\": " << d.regs_per_sm << ",\n";
+        out << "      \"clock_rate_khz\": " << d.clock_rate_khz << ",\n";
+        out << "      \"max_clock_rate_khz\": " << d.clock_rate_max_khz << "\n";
         out << "    },\n";
-    } else {
-        out << "    \"tcgen05\": null,\n";
-    }
 
-    if (result.gpu.deep_sm) {
-        auto& sm = *result.gpu.deep_sm;
-        out << "    \"deep_sm\": {\n";
-        out << "      \"warp_schedulers_per_sm\": { \"value\": " << sm.warp_schedulers_per_sm.value << ", \"source\": " << json_str(sm.warp_schedulers_per_sm.sourceStr()) << " },\n";
-        out << "      \"smem_banks\": { \"value\": " << sm.smem_banks.value << ", \"source\": " << json_str(sm.smem_banks.sourceStr()) << " },\n";
-        out << "      \"smem_bank_width_bits\": { \"value\": " << sm.smem_bank_width_bits.value << ", \"source\": " << json_str(sm.smem_bank_width_bits.sourceStr()) << " },\n";
-        out << "      \"l1_cache_size_per_sm\": { \"value\": " << sm.l1_cache_size_per_sm.value << ", \"source\": " << json_str(sm.l1_cache_size_per_sm.sourceStr()) << " },\n";
-        out << "      \"max_regs_per_thread\": { \"value\": " << sm.max_regs_per_thread.value << ", \"source\": " << json_str(sm.max_regs_per_thread.sourceStr()) << " },\n";
-        out << "      \"max_shared_per_block\": { \"value\": " << sm.max_shared_per_block.value << ", \"source\": " << json_str(sm.max_shared_per_block.sourceStr()) << " },\n";
-        out << "      \"max_registers_per_sm\": { \"value\": " << sm.max_registers_per_sm.value << ", \"source\": " << json_str(sm.max_registers_per_sm.sourceStr()) << " },\n";
-        out << "      \"max_shared_per_sm\": { \"value\": " << sm.max_shared_per_sm.value << ", \"source\": " << json_str(sm.max_shared_per_sm.sourceStr()) << " },\n";
-        out << "      \"max_threads_per_sm\": { \"value\": " << sm.max_threads_per_sm.value << ", \"source\": " << json_str(sm.max_threads_per_sm.sourceStr()) << " }\n";
-        out << "    }\n";
-    } else {
-        out << "    \"deep_sm\": null\n";
+        if (result.gpu.tcgen05) {
+            out << "    \"tcgen05\": {\n";
+            out << "      \"has_nvfp4\": " << (result.gpu.tcgen05->has_nvfp4() ? "true" : "false") << ",\n";
+            out << "      \"has_fp8\": " << (result.gpu.tcgen05->has_fp8() ? "true" : "false") << ",\n";
+            out << "      \"tmem_supported\": " << (result.gpu.tcgen05->tmem.supported ? "true" : "false") << "\n";
+            out << "    },\n";
+        } else {
+            out << "    \"tcgen05\": null,\n";
+        }
+
+        if (result.gpu.deep_sm) {
+            auto& sm = *result.gpu.deep_sm;
+            out << "    \"deep_sm\": {\n";
+            out << "      \"warp_schedulers_per_sm\": { \"value\": " << sm.warp_schedulers_per_sm.value << ", \"source\": " << json_str(sm.warp_schedulers_per_sm.sourceStr()) << " },\n";
+            out << "      \"smem_banks\": { \"value\": " << sm.smem_banks.value << ", \"source\": " << json_str(sm.smem_banks.sourceStr()) << " },\n";
+            out << "      \"smem_bank_width_bits\": { \"value\": " << sm.smem_bank_width_bits.value << ", \"source\": " << json_str(sm.smem_bank_width_bits.sourceStr()) << " },\n";
+            out << "      \"l1_cache_size_per_sm\": { \"value\": " << sm.l1_cache_size_per_sm.value << ", \"source\": " << json_str(sm.l1_cache_size_per_sm.sourceStr()) << " },\n";
+            out << "      \"max_regs_per_thread\": { \"value\": " << sm.max_regs_per_thread.value << ", \"source\": " << json_str(sm.max_regs_per_thread.sourceStr()) << " },\n";
+            out << "      \"max_shared_per_block\": { \"value\": " << sm.max_shared_per_block.value << ", \"source\": " << json_str(sm.max_shared_per_block.sourceStr()) << " },\n";
+            out << "      \"max_registers_per_sm\": { \"value\": " << sm.max_registers_per_sm.value << ", \"source\": " << json_str(sm.max_registers_per_sm.sourceStr()) << " },\n";
+            out << "      \"max_shared_per_sm\": { \"value\": " << sm.max_shared_per_sm.value << ", \"source\": " << json_str(sm.max_shared_per_sm.sourceStr()) << " },\n";
+            out << "      \"max_threads_per_sm\": { \"value\": " << sm.max_threads_per_sm.value << ", \"source\": " << json_str(sm.max_threads_per_sm.sourceStr()) << " }\n";
+            out << "    }\n";
+        } else {
+            out << "    \"deep_sm\": null\n";
+        }
+        out << "  }";
     }
-    out << "  }";
     sections++;
     if (sections < totalSections) out << ",";
     out << "\n";
@@ -390,8 +399,27 @@ int main(int argc, char* argv[]) {
             return 0;
         } else if (arg == "--json") {
             json_out = true;
+        } else if (arg[0] == '-') {
+            std::cerr << "Error: unrecognized option: " << arg << std::endl;
+            print_usage(argv[0]);
+            return 1;
         } else {
-            device = std::atoi(arg.c_str());
+            try {
+                device = std::stoi(arg);
+                if (device < 0) {
+                    std::cerr << "Error: device ID must be non-negative: " << arg << std::endl;
+                    print_usage(argv[0]);
+                    return 1;
+                }
+            } catch (const std::invalid_argument&) {
+                std::cerr << "Error: invalid device ID: " << arg << std::endl;
+                print_usage(argv[0]);
+                return 1;
+            } catch (const std::out_of_range&) {
+                std::cerr << "Error: device ID out of range: " << arg << std::endl;
+                print_usage(argv[0]);
+                return 1;
+            }
         }
     }
 
@@ -414,8 +442,12 @@ int main(int argc, char* argv[]) {
     bool gpuAvailable = false;
     cudaError_t err = cudaGetDeviceCount(&deviceCount);
     if (err == cudaSuccess && deviceCount > 0 && device >= 0 && device < deviceCount) {
-        cudaCheck(cudaSetDevice(device));
-        gpuAvailable = true;
+        try {
+            cudaCheck(cudaSetDevice(device));
+            gpuAvailable = true;
+        } catch (const std::exception& e) {
+            LOG_ERROR("GPU", "cudaSetDevice(%d) failed: %s", device, e.what());
+        }
     } else if (err != cudaSuccess) {
         LOG_WARN("GPU", "cudaGetDeviceCount failed: %s", cudaGetErrorString(err));
     } else if (deviceCount == 0) {
@@ -439,6 +471,11 @@ int main(int argc, char* argv[]) {
         } catch (const std::exception& e) {
             std::cerr << "[gpu] FAILED: " << e.what() << std::endl;
             gpuAvailable = false;
+            result.gpu = GpuResult{};
+        } catch (...) {
+            LOG_ERROR("GPU", "Unknown GPU probe failure");
+            gpuAvailable = false;
+            result.gpu = GpuResult{};
         }
     }
 
@@ -466,10 +503,10 @@ int main(int argc, char* argv[]) {
 
     /* --- System --- */
     SystemResult sys;
-    try { sys.memory = probe_memory(); } catch (...) {}
-    try { sys.display = probe_display(); } catch (...) {}
-    try { sys.network = probe_network(); } catch (...) {}
-    try { sys.pcie = probe_pcie(); } catch (...) {}
+    try { sys.memory = probe_memory(); } catch (...) { LOG_WARN("System", "probe_memory failed"); }
+    try { sys.display = probe_display(); } catch (...) { LOG_WARN("System", "probe_display failed"); }
+    try { sys.network = probe_network(); } catch (...) { LOG_WARN("System", "probe_network failed"); }
+    try { sys.pcie = probe_pcie(); } catch (...) { LOG_WARN("System", "probe_pcie failed"); }
     result.system = sys;
     out << "[system] Probed" << std::endl;
 
@@ -486,7 +523,7 @@ int main(int argc, char* argv[]) {
     if (json_out) {
         json_print_result(result);
     } else {
-        print_gpu_result(result.gpu);
+        if (gpuAvailable) print_gpu_result(result.gpu);
         std::cout.flush();
         if (result.cpu) print_cpu_result(*result.cpu);
         std::cout.flush();
