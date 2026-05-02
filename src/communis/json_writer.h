@@ -70,7 +70,7 @@ public:
         need_comma_ = false;
     }
     void end_object() {
-        --indent_;
+        if (indent_ > 0) --indent_;
         if (!compact_) { oss_ << "\n"; write_indent(); }
         oss_ << "}";
         need_comma_ = true;
@@ -94,7 +94,7 @@ public:
         need_comma_ = false;
     }
     void end_array() {
-        --indent_;
+        if (indent_ > 0) --indent_;
         if (!compact_) { oss_ << "\n"; write_indent(); }
         oss_ << "]";
         need_comma_ = true;
@@ -132,7 +132,11 @@ public:
     void field_double(std::string_view key, double val) {
         maybe_comma();
         write_indent();
-        oss_ << "\"" << escape(key) << "\": " << val;
+        if (std::isnan(val) || std::isinf(val)) {
+            oss_ << "\"" << escape(key) << "\": null";
+        } else {
+            oss_ << "\"" << escape(key) << "\": " << val;
+        }
     }
 
     void field_bool(std::string_view key, bool val) {

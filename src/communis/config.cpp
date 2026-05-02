@@ -45,12 +45,17 @@ bool Config::load(const std::string& path) {
         std::string key = line.substr(0, eq);
         std::string val = line.substr(eq + 1);
 
-        // Trim key and value
         auto kt = key.find_last_not_of(" \t");
         if (kt != std::string::npos) key.resize(kt + 1);
+        auto ktl = key.find_first_not_of(" \t");
+        if (ktl != std::string::npos) key = key.substr(ktl);
         auto vt = val.find_first_not_of(" \t");
         if (vt != std::string::npos) val = val.substr(vt);
         else val.clear();
+        if (!val.empty()) {
+            auto vtr = val.find_last_not_of(" \t");
+            if (vtr != std::string::npos) val.resize(vtr + 1);
+        }
 
         entries_[key] = val;
     }
@@ -68,14 +73,20 @@ int Config::get_int(const std::string& key, int def) const {
     auto it = entries_.find(key);
     if (it == entries_.end()) return def;
     try { return std::stoi(it->second); }
-    catch (...) { return def; }
+    catch (const std::exception&) {
+      LOG_WARN("Config", "Invalid int for key '%s', using default %d", key.c_str(), def);
+      return def;
+    }
 }
 
 double Config::get_double(const std::string& key, double def) const {
     auto it = entries_.find(key);
     if (it == entries_.end()) return def;
     try { return std::stod(it->second); }
-    catch (...) { return def; }
+    catch (const std::exception&) {
+      LOG_WARN("Config", "Invalid double for key '%s', using default %.1f", key.c_str(), def);
+      return def;
+    }
 }
 
 bool Config::get_bool(const std::string& key, bool def) const {

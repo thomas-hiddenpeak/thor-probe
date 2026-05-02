@@ -27,10 +27,10 @@ inline const char* level_str(Level l) {
 
 inline std::atomic<Level> g_min_level{Level::INFO};
 
-inline void set_level(Level l) { g_min_level.store(l, std::memory_order_relaxed); }
+inline void set_level(Level l) { g_min_level.store(l, std::memory_order_release); }
 
 inline void log(Level level, const char* module, const char* fmt, ...) {
-    if (level < g_min_level.load(std::memory_order_relaxed)) return;
+    if (level < g_min_level.load(std::memory_order_acquire)) return;
 
     struct timespec ts;
     struct tm tm;
@@ -54,6 +54,7 @@ inline void log(Level level, const char* module, const char* fmt, ...) {
         }
     }
 
+    flockfile(stderr);
     fprintf(stderr, "[%02d:%02d:%02d.%03ld] [%5s] [%s] ",
             tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec / 1000000,
             level_str(level), module);
@@ -64,6 +65,7 @@ inline void log(Level level, const char* module, const char* fmt, ...) {
     va_end(args);
 
     fputc('\n', stderr);
+    funlockfile(stderr);
 }
 
 } // namespace log

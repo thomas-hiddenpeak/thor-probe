@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <stdexcept>
 #include <sys/eventfd.h>
 #include <unistd.h>
 
@@ -22,7 +23,10 @@ public:
         , head_(0)
         , tail_(0)
     {
-        if (capacity_bytes == 0 || (capacity_bytes & (capacity_bytes - 1)) != 0) {
+        if (capacity_bytes == 0) {
+            throw std::invalid_argument("RingBuffer capacity must be > 0");
+        }
+        if ((capacity_bytes & (capacity_bytes - 1)) != 0) {
             capacity_ = 1;
             while (capacity_ < capacity_bytes) capacity_ <<= 1;
             mask_ = capacity_ - 1;
@@ -125,8 +129,8 @@ public:
     int event_fd() const { return event_fd_; }
 
     void reset() {
-        head_.store(0, std::memory_order_relaxed);
-        tail_.store(0, std::memory_order_relaxed);
+        head_.store(0, std::memory_order_release);
+        tail_.store(0, std::memory_order_release);
     }
 
 private:

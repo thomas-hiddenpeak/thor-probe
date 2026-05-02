@@ -72,7 +72,7 @@ struct GpuDeviceProps {
     int                 dedicated_copy_engines = 0;
     int                 general_copy_engines = 0;
 
-    int total_warps_per_sm() const { return max_threads_per_sm / warp_size; }
+    int total_warps_per_sm() const { return warp_size == 0 ? 0 : max_threads_per_sm / warp_size; }
     double global_mem_gb() const { return total_global_mem / (1024.0 * 1024.0 * 1024.0); }
 };
 

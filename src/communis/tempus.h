@@ -58,11 +58,10 @@ inline void anchor_register(Domain d,
                             uint64_t t1_zero,
                             uint64_t period_ns) noexcept {
     auto& slot = detail::anchors()[static_cast<size_t>(d)];
-    uint32_t seq = slot.seq_.load(std::memory_order_relaxed);
     slot.t0_anchor_ns.store(t0_anchor_ns, std::memory_order_release);
     slot.t1_zero.store(t1_zero,           std::memory_order_release);
     slot.period_ns.store(period_ns,       std::memory_order_release);
-    slot.seq_.store(++seq, std::memory_order_release);
+    slot.seq_.fetch_add(1, std::memory_order_acq_rel);
 }
 
 inline ClockAnchor anchor_of(Domain d) noexcept {
@@ -81,8 +80,10 @@ inline ClockAnchor anchor_of(Domain d) noexcept {
 inline uint64_t t1_to_t0(Domain d, uint64_t t1) noexcept {
     const ClockAnchor a = anchor_of(d);
     if (a.period_ns == 0) return 0;
-    const int64_t delta = static_cast<int64_t>(t1) - static_cast<int64_t>(a.t1_zero);
-    return a.t0_anchor_ns + static_cast<uint64_t>(delta * static_cast<int64_t>(a.period_ns));
+    if (t1 < a.t1_zero) return 0;
+    const uint64_t delta = t1 - a.t1_zero;
+    const double delta_ns = static_cast<double>(delta) * static_cast<double>(a.period_ns);
+    return a.t0_anchor_ns + static_cast<uint64_t>(delta_ns);
 }
 
 inline uint64_t t0_to_t1(Domain d, uint64_t t0_ns) noexcept {
